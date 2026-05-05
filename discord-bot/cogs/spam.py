@@ -21,7 +21,7 @@ from utils.state import bot_state
 
 RAID_TAG   = "LAST STAND CLAN"
 RAID_SHORT = "LSC"
-RAID_LINK  = "https://discord.gg/laststandclan"
+RAID_LINK  = "https://discord.gg/s59zWvzK6c"
 
 SPAM_MSGS = [
     f"@everyone 💀 **{RAID_TAG}** 💀 {RAID_LINK}",

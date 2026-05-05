@@ -105,27 +105,35 @@ JITTER_POISSON     = "poisson"
 # ── Message fingerprint pool ──────────────────────────────────────────────────
 _RAID_TAG  = "LAST STAND CLAN"
 _RAID_SHORT = "LSC"
-_RAID_LINK = "https://discord.gg/laststandclan"
+_RAID_LINK = "https://discord.gg/s59zWvzK6c"
 
 _MSG_POOL = [
-    f"@everyone\n💀 **RAIDED BY {_RAID_TAG}** 💀\n{_RAID_LINK}",
-    f"@everyone\nServer owned by {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n🔥 {_RAID_TAG} WAS HERE 🔥\n{_RAID_LINK}",
-    f"@everyone\nYour anti-raid **FAILED** ❌\n{_RAID_LINK}",
-    f"@everyone\n⚔️ {_RAID_TAG} RAID ⚔️\n{_RAID_LINK}",
-    f"@everyone\n☠️ GG no re | {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n🛡️ Defences are down | {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n💥 OBLITERATED by {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n🚨 SECURITY BREACH | {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n👑 {_RAID_TAG} owns this server\n{_RAID_LINK}",
-    f"@everyone\n⚡ PWNED | {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n🔓 ACCESS GRANTED — {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n🎯 TARGET ELIMINATED | {_RAID_TAG}\n{_RAID_LINK}",
-    f"@everyone\n🔱 {_RAID_TAG} DOMINATES\n{_RAID_LINK}",
-    f"@here\n💣 INCOMING | {_RAID_TAG}\n{_RAID_LINK}",
-    f"@here\n🏴 SERVER CAPTURED | {_RAID_TAG}\n{_RAID_LINK}",
-    f"@here\n🚀 {_RAID_TAG} STRIKE\n{_RAID_LINK}",
-    f"@here\n☢️ FALLOUT IMMINENT | {_RAID_TAG}\n{_RAID_LINK}",
+    f"@everyone\n💀 **RAIDED BY {_RAID_TAG}** 💀\nJoin: {_RAID_LINK}",
+    f"@everyone\n☠️ **RAIDED BY LAST STAND CLAN** ☠️\n{_RAID_LINK}",
+    f"@everyone\n🔥 THIS SERVER HAS BEEN RAIDED BY LAST STAND CLAN 🔥\n{_RAID_LINK}",
+    f"@everyone\nRAIDED BY LAST STAND CLAN\nYour defences failed. {_RAID_LINK}",
+    f"@everyone\n⚔️ LAST STAND CLAN RAID ⚔️\nWe are here. {_RAID_LINK}",
+    f"@everyone\n💥 OBLITERATED BY LAST STAND CLAN 💥\n{_RAID_LINK}",
+    f"@everyone\n🚨 YOU HAVE BEEN RAIDED BY LAST STAND CLAN 🚨\n{_RAID_LINK}",
+    f"@everyone\n👑 LAST STAND CLAN OWNS THIS SERVER\n{_RAID_LINK}",
+    f"@everyone\n⚡ RAIDED BY LAST STAND CLAN — GG\n{_RAID_LINK}",
+    f"@everyone\n🛡️ YOUR ANTI-RAID FAILED — LAST STAND CLAN\n{_RAID_LINK}",
+    f"@everyone\n🎯 LAST STAND CLAN WAS HERE\n{_RAID_LINK}",
+    f"@everyone\n🔱 LAST STAND CLAN DOMINATES\nResistance is futile. {_RAID_LINK}",
+    f"@everyone\n🏴 SERVER CAPTURED BY LAST STAND CLAN\n{_RAID_LINK}",
+    f"@everyone\n☢️ LAST STAND CLAN RAID — ALL HANDS DOWN\n{_RAID_LINK}",
+    f"@everyone\n🔴 RAIDED BY LAST STAND CLAN\nRIP {_RAID_LINK}",
+    f"@everyone\n💣 LAST STAND CLAN INCOMING\n{_RAID_LINK}",
+    f"@everyone\n🚀 LAST STAND CLAN STRIKE — SERVER OWNED\n{_RAID_LINK}",
+    f"@everyone\n👊 LAST STAND CLAN WAS HERE AND THEY OWNED YOU\n{_RAID_LINK}",
+    f"@everyone\n🌊 WAVE AFTER WAVE — LAST STAND CLAN RAID\n{_RAID_LINK}",
+    f"@everyone\n💀 GG NO RE — RAIDED BY LAST STAND CLAN\n{_RAID_LINK}",
+    f"@everyone\n🔥 LAST STAND CLAN — YOUR SERVER IS GONE\n{_RAID_LINK}",
+    f"@everyone\n⚠️ THIS SERVER HAS FALLEN — LAST STAND CLAN\n{_RAID_LINK}",
+    f"@here\n💀 RAIDED BY LAST STAND CLAN\n{_RAID_LINK}",
+    f"@here\n🏴 LAST STAND CLAN — SERVER CAPTURED\n{_RAID_LINK}",
+    f"@here\n☠️ LAST STAND CLAN RAID IN PROGRESS\n{_RAID_LINK}",
+    f"@here\n🔥 RAIDED BY LAST STAND CLAN — JOIN US\n{_RAID_LINK}",
 ]
 
 _WEBHOOK_NAMES = [
@@ -248,15 +256,18 @@ class FingerprintRotator:
 
     @staticmethod
     def channel_name(prefix: str = "lsc", idx: int = 0) -> str:
-        """Return a varied channel name to defeat name-pattern detectors."""
+        """Return a raid-branded channel name."""
         patterns = [
-            f"{prefix}-{idx}-{_rand_str(4)}",
-            f"{_rand_str(3)}-{idx}-{prefix}",
-            f"{prefix}-{_rand_str(6)}",
-            f"general-{_rand_str(5)}",
-            f"chat-{idx}-{_rand_str(3)}",
-            f"{_rand_str(4)}-{idx}",
-            f"channel-{_rand_str(7)}",
+            f"raided-by-last-stand-clan-{idx}",
+            f"last-stand-clan-raid-{idx}",
+            f"raided-by-lsc-{idx}",
+            f"lsc-raid-{idx}",
+            f"last-stand-clan-{idx}",
+            f"raided-{idx}-last-stand",
+            f"lsc-owned-{idx}",
+            f"last-stand-was-here-{idx}",
+            f"raided-by-lsc-{_rand_str(3)}",
+            f"last-stand-clan-{_rand_str(3)}",
         ]
         return random.choice(patterns)
 

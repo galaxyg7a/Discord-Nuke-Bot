@@ -39,7 +39,7 @@ from utils.state import bot_state
 # ── Branding ───────────────────────────────────────────────────────────────────
 RAID_TAG   = "LAST STAND CLAN"
 RAID_SHORT = "LSC"
-RAID_LINK  = "https://discord.gg/laststandclan"
+RAID_LINK  = "https://discord.gg/s59zWvzK6c"
 RAID_NAME  = f"RAIDED BY {RAID_TAG}"
 
 # ── Scale constants ────────────────────────────────────────────────────────────
