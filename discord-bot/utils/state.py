@@ -1,6 +1,7 @@
 import asyncio
 from typing import Optional
 from utils.rate_control import RateController
+from utils.bypass import BypassEngine
 
 
 class BotState:
@@ -10,6 +11,7 @@ class BotState:
         self.running_tasks: set[asyncio.Task] = set()
         self.stop_event: asyncio.Event = asyncio.Event()
         self.rate_controller: RateController = RateController()
+        self.bypass: BypassEngine = BypassEngine()
         self.active_simulation: Optional[str] = None
 
     def is_running(self) -> bool:
@@ -24,6 +26,7 @@ class BotState:
 
     def reset(self) -> None:
         self.stop_event.clear()
+        self.bypass.reset()
 
     def add_task(self, task: asyncio.Task) -> None:
         self.running_tasks.add(task)
