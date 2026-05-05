@@ -289,7 +289,7 @@ class BypassEngine:
     adaptive backoff, jitter, fingerprint rotation, and stealth injection.
     """
 
-    MAX_RETRIES = 3
+    MAX_RETRIES = 8
 
     def __init__(self) -> None:
         self._route_states: dict[str, RouteState] = defaultdict(RouteState)
