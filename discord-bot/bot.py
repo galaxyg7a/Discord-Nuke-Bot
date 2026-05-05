@@ -28,7 +28,9 @@ COGS = [
 
 class RaidTestBot(commands.Bot):
     def __init__(self) -> None:
-        intents = discord.Intents.all()
+        intents = discord.Intents.default()
+        intents.members = True          # Server Members Intent (privileged — must be ON in portal)
+        intents.message_content = True  # Message Content Intent (privileged — must be ON in portal)
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self) -> None:
