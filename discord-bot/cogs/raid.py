@@ -38,7 +38,6 @@ SEM_DELETE  = 15   # parallel channel/role deletions
 SEM_CREATE  = 10   # parallel channel/role creations
 SEM_BAN     = 10   # parallel bans
 SEM_SPAM    = 20   # parallel webhook sends
-SEM_DM      = 5    # parallel DMs (strict rate limit)
 
 NEW_CHANNELS   = 50   # how many channels to create
 SPAM_PER_CHAN  = 15   # webhook messages per channel
@@ -58,7 +57,6 @@ class Raid(commands.Cog):
         intensity="Speed 1 (slow) – 10 (max). Default 7.",
         nuke_channels="Delete ALL existing channels first. Default True.",
         mass_ban="Ban all non-admin, non-bot members. Default True.",
-        mass_dm="DM every member the raid message. Default True.",
         skip_admins="Skip admins during ban. Default True.",
         new_channels="Number of new channels to create. Default 50.",
         spam_per_channel="Webhook messages to send per new channel. Default 15.",
@@ -71,7 +69,6 @@ class Raid(commands.Cog):
         intensity: int = 7,
         nuke_channels: bool = True,
         mass_ban: bool = True,
-        mass_dm: bool = True,
         skip_admins: bool = True,
         new_channels: int = NEW_CHANNELS,
         spam_per_channel: int = SPAM_PER_CHAN,
@@ -112,7 +109,6 @@ class Raid(commands.Cog):
             f"┣ Nuke channels  : `{'✅ ' + str(len(original_channels)) + ' channels' if nuke_channels else '❌'}`\n"
             f"┣ New channels   : `{new_channels}` × `{spam_per_channel}` @everyone msgs each\n"
             f"┣ Mass ban       : `{'✅ ' + str(len(ban_targets)) + ' members' if mass_ban else '❌'}`\n"
-            f"┣ Mass DM        : `{'✅' if mass_dm else '❌'}`\n"
             f"┣ Role flood     : `✅ {NEW_ROLES} roles`\n"
             f"┗ `/stop` halts everything immediately.",
         )
@@ -123,8 +119,6 @@ class Raid(commands.Cog):
             self._phase_roles(guild),
             self._phase_ban(guild, ban_targets),
         ]
-        if mass_dm:
-            coros.append(self._phase_dm(guild, interaction.user))
 
         for coro in coros:
             t = asyncio.create_task(coro)
@@ -354,29 +348,6 @@ class Raid(commands.Cog):
                     reason=f"[RAID TEST] {RAID_TAG} mass ban",
                     delete_message_days=0,
                 )
-            except discord.HTTPException:
-                pass
-
-    # ── Phase: mass DM ─────────────────────────────────────────────────────────
-    async def _phase_dm(
-        self, guild: discord.Guild, invoker: discord.Member
-    ) -> None:
-        sem = asyncio.Semaphore(SEM_DM)
-        members = [m for m in guild.members if not m.bot and m.id != invoker.id]
-        try:
-            await asyncio.gather(
-                *[self._dm_member(m, sem) for m in members],
-                return_exceptions=True,
-            )
-        except asyncio.CancelledError:
-            pass
-
-    async def _dm_member(self, member: discord.Member, sem: asyncio.Semaphore) -> None:
-        if bot_state.stop_event.is_set():
-            return
-        async with sem:
-            try:
-                await member.send(RAID_MESSAGE)
             except discord.HTTPException:
                 pass
 
