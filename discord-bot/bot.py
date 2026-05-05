@@ -28,9 +28,7 @@ COGS = [
 
 class RaidTestBot(commands.Bot):
     def __init__(self) -> None:
-        intents = discord.Intents.default()
-        intents.members = True
-        intents.guilds = True
+        intents = discord.Intents.all()
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self) -> None:
