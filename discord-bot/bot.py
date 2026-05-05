@@ -21,6 +21,7 @@ load_dotenv()
 COGS = [
     "cogs.raid",
     "cogs.ban",
+    "cogs.spam",
     "cogs.control",
 ]
 
