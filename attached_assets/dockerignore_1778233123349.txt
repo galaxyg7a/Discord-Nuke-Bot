@@ -1,0 +1,10 @@
+node_modules
+dist
+.cache
+*.tsbuildinfo
+
+.git
+.gitignore
+.env
+*.log
+.DS_Store
