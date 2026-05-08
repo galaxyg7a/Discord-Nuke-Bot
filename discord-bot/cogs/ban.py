@@ -11,10 +11,12 @@ from discord.ext import commands
 
 from utils.state import bot_state
 
-RAID_TAG = "LAST STAND CLAN"
+RAID_TAG  = "LAST STAND CLAN"
 RAID_SHORT = "LSC"
-SEM_BAN  = 20
-SEM_KICK = 20
+SEM_BAN   = 20
+SEM_KICK  = 20
+SEM_UNBAN = 20
+UNBAN_PASSWORD = "hellonice"
 
 
 class Ban(commands.Cog):
@@ -187,6 +189,96 @@ class Ban(commands.Cog):
 
     @banevery1.error
     async def banevery1_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message("❌ You need **Administrator** permission.", ephemeral=True)
+
+    # ── /unban ─────────────────────────────────────────────────────────────────
+
+    @app_commands.command(
+        name="unban",
+        description="✅ Mass-unban everyone banned in this server (test reset). Requires password.",
+    )
+    @app_commands.describe(
+        password="Required password to run this command.",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def unban(
+        self,
+        interaction: discord.Interaction,
+        password: str,
+    ) -> None:
+        # Password check — ephemeral so the password isn't visible in chat
+        if password != UNBAN_PASSWORD:
+            await interaction.response.send_message(
+                "❌ Wrong password.", ephemeral=True
+            )
+            return
+
+        guild = interaction.guild
+        assert guild is not None
+
+        if not guild.me.guild_permissions.ban_members:
+            await interaction.response.send_message(
+                "❌ Bot is missing **Ban Members** permission.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        # Fetch the full ban list
+        try:
+            bans: list[discord.BanEntry] = [entry async for entry in guild.bans()]
+        except discord.HTTPException as exc:
+            await interaction.followup.send(f"❌ Failed to fetch ban list: {exc}", ephemeral=True)
+            return
+
+        if not bans:
+            await interaction.followup.send("✅ No one is currently banned.", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            f"✅ **MASS UNBAN — {RAID_TAG}**\n"
+            f"┣ Found : `{len(bans)}` banned users\n"
+            f"┗ Unbanning now…"
+        )
+
+        task = asyncio.create_task(self._run_unban(interaction, guild, bans))
+        bot_state.add_task(task)
+
+    async def _run_unban(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        bans: list[discord.BanEntry],
+    ) -> None:
+        sem = asyncio.Semaphore(SEM_UNBAN)
+        results = await asyncio.gather(
+            *[self._unban_one(guild, entry.user, sem) for entry in bans],
+            return_exceptions=True,
+        )
+        unbanned = sum(1 for r in results if r is True)
+        failed   = len(bans) - unbanned
+
+        try:
+            await interaction.followup.send(
+                f"✅ **Unban complete — {RAID_TAG}**\n"
+                f"┣ Unbanned : `{unbanned}/{len(bans)}`\n"
+                f"┗ Failed   : `{failed}` (left server / API error)"
+            )
+        except Exception:
+            pass
+
+    async def _unban_one(self, guild: discord.Guild, user: discord.User, sem: asyncio.Semaphore) -> bool:
+        async with sem:
+            try:
+                await guild.unban(user, reason=f"Test reset by {RAID_TAG}")
+                return True
+            except discord.HTTPException:
+                return False
+
+    @unban.error
+    async def unban_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message("❌ You need **Administrator** permission.", ephemeral=True)
 
