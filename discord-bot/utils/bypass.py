@@ -101,6 +101,7 @@ JITTER_ZERO        = "zero"
 JITTER_GAUSSIAN    = "gaussian"
 JITTER_EXPONENTIAL = "exponential"
 JITTER_POISSON     = "poisson"
+JITTER_UNIFORM     = "uniform"
 
 # ── Message fingerprint pool ──────────────────────────────────────────────────
 _RAID_TAG  = "LAST STAND CLAN"
