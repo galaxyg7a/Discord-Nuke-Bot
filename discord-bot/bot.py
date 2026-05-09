@@ -13,6 +13,7 @@ import os
 import sys
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -42,6 +43,29 @@ class RaidTestBot(commands.Bot):
                 print(f"[cog] loaded: {cog}")
             except Exception as exc:
                 print(f"[cog] FAILED to load {cog}: {exc}", file=sys.stderr)
+
+        # Global slash command error handler — guarantees a response is always sent
+        # so commands never hang forever on Discord's end.
+        @self.tree.error
+        async def on_tree_error(
+            interaction: discord.Interaction,
+            error: app_commands.AppCommandError,
+        ) -> None:
+            if isinstance(error, app_commands.MissingPermissions):
+                msg = "❌ You need **Administrator** permission."
+            elif isinstance(error, app_commands.NoPrivateMessage):
+                msg = "❌ This command can only be used in a server."
+            else:
+                msg = f"❌ Command error: `{error}`"
+                print(f"[error] unhandled app command error: {error}", file=sys.stderr)
+
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+            except Exception:
+                pass
 
         # Sync to a specific guild immediately (instant update) when TEST_GUILD_ID is set.
         # Without it, global sync can take up to an hour.

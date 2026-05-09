@@ -71,53 +71,60 @@ class DM(commands.Cog):
         await interaction.response.defer()
 
         try:
-            await guild.chunk(cache=True)
-        except Exception:
-            pass
-
-        targets = [
-            m for m in guild.members
-            if m.id != interaction.user.id
-            and m.id != self.bot.user.id
-            and (not skip_bots or not m.bot)
-        ]
-
-        if not targets:
-            await interaction.followup.send("⚠️ No eligible members found.", ephemeral=True)
-            return
-
-        # Build embed if requested
-        embed: discord.Embed | None = None
-        if embed_title or embed_description:
             try:
-                color_int = int(embed_color.lstrip("#"), 16)
-            except ValueError:
-                color_int = 0xFF0000
-            embed = discord.Embed(
-                title=embed_title or discord.utils.MISSING,
-                description=embed_description or discord.utils.MISSING,
-                colour=discord.Colour(color_int),
+                await guild.chunk(cache=True)
+            except Exception:
+                pass
+
+            targets = [
+                m for m in guild.members
+                if m.id != interaction.user.id
+                and m.id != self.bot.user.id
+                and (not skip_bots or not m.bot)
+            ]
+
+            if not targets:
+                await interaction.followup.send("⚠️ No eligible members found.", ephemeral=True)
+                return
+
+            embed: discord.Embed | None = None
+            if embed_title or embed_description:
+                try:
+                    color_int = int(embed_color.lstrip("#"), 16)
+                except ValueError:
+                    color_int = 0xFF0000
+                embed = discord.Embed(
+                    title=embed_title or discord.utils.MISSING,
+                    description=embed_description or discord.utils.MISSING,
+                    colour=discord.Colour(color_int),
+                )
+                embed.set_footer(text=f"{RAID_TAG} | {RAID_LINK}")
+
+            bot_state.reset()
+            bot_state.rate_controller.set_intensity(intensity)
+            bot_state.active_simulation = "massdm"
+
+            has_embed = embed is not None
+            await interaction.followup.send(
+                f"📨 **MASS DM — {RAID_TAG}**\n"
+                f"┣ Targets   : `{len(targets)}`\n"
+                f"┣ Text msg  : `{'✅' if message else '❌'}`\n"
+                f"┣ Embed     : `{'✅' if has_embed else '❌'}`\n"
+                f"┣ Intensity : `{intensity}/10`\n"
+                f"┗ `/stop` halts immediately."
             )
-            embed.set_footer(text=f"{RAID_TAG} | {RAID_LINK}")
 
-        bot_state.reset()
-        bot_state.rate_controller.set_intensity(intensity)
-        bot_state.active_simulation = "massdm"
+            task = asyncio.create_task(
+                self._run(interaction, targets, message or None, embed)
+            )
+            bot_state.add_task(task)
 
-        has_embed = embed is not None
-        await interaction.followup.send(
-            f"📨 **MASS DM — {RAID_TAG}**\n"
-            f"┣ Targets   : `{len(targets)}`\n"
-            f"┣ Text msg  : `{'✅' if message else '❌'}`\n"
-            f"┣ Embed     : `{'✅' if has_embed else '❌'}`\n"
-            f"┣ Intensity : `{intensity}/10`\n"
-            f"┗ `/stop` halts immediately."
-        )
-
-        task = asyncio.create_task(
-            self._run(interaction, targets, message or None, embed)
-        )
-        bot_state.add_task(task)
+        except Exception as exc:
+            bot_state.active_simulation = None
+            try:
+                await interaction.followup.send(f"❌ Error: `{exc}`", ephemeral=True)
+            except Exception:
+                pass
 
     async def _run(
         self,

