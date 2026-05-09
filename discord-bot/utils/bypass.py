@@ -1,5 +1,5 @@
 """
-bypass.py — LAST STAND CLAN | Advanced Discord API Bypass Engine
+bypass.py — LAST STAND | Advanced Discord API Bypass Engine
 
 Techniques implemented:
 
@@ -104,37 +104,37 @@ JITTER_POISSON     = "poisson"
 JITTER_UNIFORM     = "uniform"
 
 # ── Message fingerprint pool ──────────────────────────────────────────────────
-_RAID_TAG  = "LAST STAND CLAN"
+_RAID_TAG  = "LAST STAND"
 _RAID_SHORT = "LSC"
 _RAID_LINK = "https://discord.gg/s59zWvzK6c"
 
 _MSG_POOL = [
     f"@everyone\n💀 **RAIDED BY {_RAID_TAG}** 💀\nJoin: {_RAID_LINK}",
-    f"@everyone\n☠️ **RAIDED BY LAST STAND CLAN** ☠️\n{_RAID_LINK}",
-    f"@everyone\n🔥 THIS SERVER HAS BEEN RAIDED BY LAST STAND CLAN 🔥\n{_RAID_LINK}",
-    f"@everyone\nRAIDED BY LAST STAND CLAN\nYour defences failed. {_RAID_LINK}",
-    f"@everyone\n⚔️ LAST STAND CLAN RAID ⚔️\nWe are here. {_RAID_LINK}",
-    f"@everyone\n💥 OBLITERATED BY LAST STAND CLAN 💥\n{_RAID_LINK}",
-    f"@everyone\n🚨 YOU HAVE BEEN RAIDED BY LAST STAND CLAN 🚨\n{_RAID_LINK}",
-    f"@everyone\n👑 LAST STAND CLAN OWNS THIS SERVER\n{_RAID_LINK}",
-    f"@everyone\n⚡ RAIDED BY LAST STAND CLAN — GG\n{_RAID_LINK}",
-    f"@everyone\n🛡️ YOUR ANTI-RAID FAILED — LAST STAND CLAN\n{_RAID_LINK}",
-    f"@everyone\n🎯 LAST STAND CLAN WAS HERE\n{_RAID_LINK}",
-    f"@everyone\n🔱 LAST STAND CLAN DOMINATES\nResistance is futile. {_RAID_LINK}",
-    f"@everyone\n🏴 SERVER CAPTURED BY LAST STAND CLAN\n{_RAID_LINK}",
-    f"@everyone\n☢️ LAST STAND CLAN RAID — ALL HANDS DOWN\n{_RAID_LINK}",
-    f"@everyone\n🔴 RAIDED BY LAST STAND CLAN\nRIP {_RAID_LINK}",
-    f"@everyone\n💣 LAST STAND CLAN INCOMING\n{_RAID_LINK}",
-    f"@everyone\n🚀 LAST STAND CLAN STRIKE — SERVER OWNED\n{_RAID_LINK}",
-    f"@everyone\n👊 LAST STAND CLAN WAS HERE AND THEY OWNED YOU\n{_RAID_LINK}",
-    f"@everyone\n🌊 WAVE AFTER WAVE — LAST STAND CLAN RAID\n{_RAID_LINK}",
-    f"@everyone\n💀 GG NO RE — RAIDED BY LAST STAND CLAN\n{_RAID_LINK}",
-    f"@everyone\n🔥 LAST STAND CLAN — YOUR SERVER IS GONE\n{_RAID_LINK}",
-    f"@everyone\n⚠️ THIS SERVER HAS FALLEN — LAST STAND CLAN\n{_RAID_LINK}",
-    f"@here\n💀 RAIDED BY LAST STAND CLAN\n{_RAID_LINK}",
-    f"@here\n🏴 LAST STAND CLAN — SERVER CAPTURED\n{_RAID_LINK}",
-    f"@here\n☠️ LAST STAND CLAN RAID IN PROGRESS\n{_RAID_LINK}",
-    f"@here\n🔥 RAIDED BY LAST STAND CLAN — JOIN US\n{_RAID_LINK}",
+    f"@everyone\n☠️ **RAIDED BY LAST STAND** ☠️\n{_RAID_LINK}",
+    f"@everyone\n🔥 THIS SERVER HAS BEEN RAIDED BY LAST STAND 🔥\n{_RAID_LINK}",
+    f"@everyone\nRAIDED BY LAST STAND\nYour defences failed. {_RAID_LINK}",
+    f"@everyone\n⚔️ LAST STAND RAID ⚔️\nWe are here. {_RAID_LINK}",
+    f"@everyone\n💥 OBLITERATED BY LAST STAND 💥\n{_RAID_LINK}",
+    f"@everyone\n🚨 YOU HAVE BEEN RAIDED BY LAST STAND 🚨\n{_RAID_LINK}",
+    f"@everyone\n👑 LAST STAND OWNS THIS SERVER\n{_RAID_LINK}",
+    f"@everyone\n⚡ RAIDED BY LAST STAND — GG\n{_RAID_LINK}",
+    f"@everyone\n🛡️ YOUR ANTI-RAID FAILED — LAST STAND\n{_RAID_LINK}",
+    f"@everyone\n🎯 LAST STAND WAS HERE\n{_RAID_LINK}",
+    f"@everyone\n🔱 LAST STAND DOMINATES\nResistance is futile. {_RAID_LINK}",
+    f"@everyone\n🏴 SERVER CAPTURED BY LAST STAND\n{_RAID_LINK}",
+    f"@everyone\n☢️ LAST STAND RAID — ALL HANDS DOWN\n{_RAID_LINK}",
+    f"@everyone\n🔴 RAIDED BY LAST STAND\nRIP {_RAID_LINK}",
+    f"@everyone\n💣 LAST STAND INCOMING\n{_RAID_LINK}",
+    f"@everyone\n🚀 LAST STAND STRIKE — SERVER OWNED\n{_RAID_LINK}",
+    f"@everyone\n👊 LAST STAND WAS HERE AND THEY OWNED YOU\n{_RAID_LINK}",
+    f"@everyone\n🌊 WAVE AFTER WAVE — LAST STAND RAID\n{_RAID_LINK}",
+    f"@everyone\n💀 GG NO RE — RAIDED BY LAST STAND\n{_RAID_LINK}",
+    f"@everyone\n🔥 LAST STAND — YOUR SERVER IS GONE\n{_RAID_LINK}",
+    f"@everyone\n⚠️ THIS SERVER HAS FALLEN — LAST STAND\n{_RAID_LINK}",
+    f"@here\n💀 RAIDED BY LAST STAND\n{_RAID_LINK}",
+    f"@here\n🏴 LAST STAND — SERVER CAPTURED\n{_RAID_LINK}",
+    f"@here\n☠️ LAST STAND RAID IN PROGRESS\n{_RAID_LINK}",
+    f"@here\n🔥 RAIDED BY LAST STAND — JOIN US\n{_RAID_LINK}",
 ]
 
 _WEBHOOK_NAMES = [
@@ -232,7 +232,7 @@ class FingerprintRotator:
         # Randomly include 0–3 fields in random order
         possible_fields = [
             ("Status",   random.choice(["ACTIVE", "EXECUTING", "COMPLETE", "RAIDING"])),
-            ("Clan",     random.choice([_RAID_TAG, _RAID_SHORT, "Last Stand"])),
+            ("Group",    random.choice([_RAID_TAG, _RAID_SHORT])),
             ("Wave",     str(wave + random.randint(0, 99))),
             ("Target",   "THIS SERVER"),
             ("Outcome",  random.choice(["OWNED", "PWNED", "DOMINATED", "RAIDED"])),
@@ -259,16 +259,16 @@ class FingerprintRotator:
     def channel_name(prefix: str = "lsc", idx: int = 0) -> str:
         """Return a raid-branded channel name."""
         patterns = [
-            f"raided-by-last-stand-clan-{idx}",
-            f"last-stand-clan-raid-{idx}",
+            f"raided-by-last-stand-{idx}",
+            f"last-stand-raid-{idx}",
             f"raided-by-lsc-{idx}",
             f"lsc-raid-{idx}",
-            f"last-stand-clan-{idx}",
+            f"last-stand-{idx}",
             f"raided-{idx}-last-stand",
             f"lsc-owned-{idx}",
             f"last-stand-was-here-{idx}",
             f"raided-by-lsc-{_rand_str(3)}",
-            f"last-stand-clan-{_rand_str(3)}",
+            f"last-stand-{_rand_str(3)}",
         ]
         return random.choice(patterns)
 

@@ -1,5 +1,5 @@
 """
-spam.py — LAST STAND CLAN | /spamchannels: maximum webhook + mention flood across all channels.
+spam.py — LAST STAND | /spamchannels: maximum webhook + mention flood across all channels.
 
 Bypass tech:
   - 10 webhooks per channel with rotating identities
@@ -19,7 +19,7 @@ from discord.ext import commands
 
 from utils.state import bot_state
 
-RAID_TAG   = "LAST STAND CLAN"
+RAID_TAG   = "LAST STAND"
 RAID_SHORT = "LSC"
 RAID_LINK  = "https://discord.gg/s59zWvzK6c"
 

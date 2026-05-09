@@ -1,5 +1,5 @@
 """
-ban.py — LAST STAND CLAN | /banevery1: mass ban + kick all eligible members concurrently.
+ban.py — LAST STAND | /banevery1: mass ban + kick all eligible members concurrently.
 """
 
 import asyncio
@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from utils.state import bot_state
 
-RAID_TAG  = "LAST STAND CLAN"
+RAID_TAG  = "LAST STAND"
 RAID_SHORT = "LSC"
 SEM_BAN   = 20
 SEM_KICK  = 20

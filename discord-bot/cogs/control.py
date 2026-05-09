@@ -1,5 +1,5 @@
 """
-control.py — LAST STAND CLAN | /stop, /setratelimit, /status, /nuke, /timeoutall, /bypassstats
+control.py — LAST STAND | /stop, /setratelimit, /status, /nuke, /timeoutall, /bypassstats
 """
 
 import asyncio
@@ -17,7 +17,7 @@ from utils.bypass import (
 )
 from utils.state import bot_state
 
-RAID_TAG   = "LAST STAND CLAN"
+RAID_TAG   = "LAST STAND"
 RAID_SHORT = "LSC"
 
 
