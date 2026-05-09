@@ -72,7 +72,7 @@ class DM(commands.Cog):
 
         try:
             try:
-                await guild.chunk(cache=True)
+                await asyncio.wait_for(guild.chunk(cache=True), timeout=10.0)
             except Exception:
                 pass
 

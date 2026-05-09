@@ -157,3 +157,6 @@ Filter targets with `m.top_role < guild.me.top_role` before attempting actions.
 4. Fixed channel creation — BATCH 4→2, PAUSE 1.1→2.0 so all requested channels actually get created
 5. Fixed webhook spam — replaced sequential burst_drain_execute with flat asyncio.gather across all webhooks × all messages simultaneously
 6. Fixed Dockerfile — was running TypeScript stub (no commands). Now runs Python bot correctly.
+7. Fixed infinite thinking on ALL deferred commands — added `asyncio.wait_for(..., timeout=10.0)` to every `guild.chunk()` call in raid.py, ban.py, and dm.py. Without this, if chunk hangs the Discord "thinking" spinner never resolves.
+8. Fixed `/timeoutall` — was responding instantly without deferring or chunking, risking 3-second Discord timeout and missing members. Now defers first, chunks with timeout, then responds. Also added role hierarchy filter so it only targets members the bot can actually timeout.
+9. Hardened `_phase_integration_wipe` in raid.py — added `if not my_app_id: return` guard so if application_id is unset the whole wipe is skipped rather than risking self-deletion (which kicks the bot).

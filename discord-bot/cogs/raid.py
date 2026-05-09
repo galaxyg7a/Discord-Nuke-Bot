@@ -456,11 +456,16 @@ class Raid(commands.Cog):
             integrations = await guild.integrations()
             my_app_id = self.bot.application_id
 
-            # NEVER delete our own integration — doing so kicks the bot from the server
+            # NEVER delete our own integration — doing so kicks the bot from the server.
+            # If application_id is somehow not set yet, skip the wipe entirely to be safe.
+            if not my_app_id:
+                return
+
             safe = [
                 intg for intg in integrations
                 if getattr(getattr(intg, "application", None), "id", None) != my_app_id
                 and getattr(intg, "id", None) != my_app_id
+                and str(getattr(intg, "id", "")) != str(my_app_id)
             ]
 
             await asyncio.gather(

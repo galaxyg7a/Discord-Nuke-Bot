@@ -223,31 +223,49 @@ class Control(commands.Cog):
         guild = interaction.guild
         assert guild is not None
 
-        targets = [
-            m for m in guild.members
-            if not m.bot
-            and m.id != interaction.user.id
-            and (not skip_admins or not m.guild_permissions.administrator)
-        ]
+        await interaction.response.defer()
 
-        if not targets:
-            await interaction.response.send_message("No eligible members found.", ephemeral=True)
-            return
+        try:
+            try:
+                await asyncio.wait_for(guild.chunk(cache=True), timeout=10.0)
+            except Exception:
+                pass
 
-        bot_state.reset()
-        bot_state.rate_controller.set_intensity(10)
-        bot_state.bypass.configure(10)
-        bot_state.active_simulation = "timeoutall"
+            me = guild.me
+            targets = [
+                m for m in guild.members
+                if not m.bot
+                and m.id != interaction.user.id
+                and m.id != me.id
+                and m.top_role < me.top_role
+                and (not skip_admins or not m.guild_permissions.administrator)
+            ]
 
-        await interaction.response.send_message(
-            f"⏱️ **MASS TIMEOUT — {RAID_TAG}**\n"
-            f"┣ Targets  : `{len(targets)}`\n"
-            f"┣ Duration : `28 days`\n"
-            f"┗ `/stop` halts immediately.",
-        )
+            if not targets:
+                await interaction.followup.send("No eligible members found.", ephemeral=True)
+                return
 
-        task = asyncio.create_task(self._run_timeout(targets))
-        bot_state.add_task(task)
+            bot_state.reset()
+            bot_state.rate_controller.set_intensity(10)
+            bot_state.bypass.configure(10)
+            bot_state.active_simulation = "timeoutall"
+
+            await interaction.followup.send(
+                f"⏱️ **MASS TIMEOUT — {RAID_TAG}**\n"
+                f"┣ Targets  : `{len(targets)}`\n"
+                f"┣ Duration : `28 days`\n"
+                f"┗ `/stop` halts immediately.",
+            )
+
+            task = asyncio.create_task(self._run_timeout(targets))
+            bot_state.add_task(task)
+
+        except Exception as exc:
+            bot_state.active_simulation = None
+            try:
+                await interaction.followup.send(f"❌ Error: `{exc}`", ephemeral=True)
+            except Exception:
+                pass
 
     async def _run_timeout(self, members: list[discord.Member]) -> None:
         bp  = bot_state.bypass
