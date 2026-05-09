@@ -36,7 +36,7 @@ CREATORS       = 5
 ROLE_FLOOD_MAX = 200
 SPAM_BURST     = 3   # messages sent per semaphore slot acquisition
 
-_SPAM_SEM = asyncio.Semaphore(50)
+_SPAM_SEM = asyncio.Semaphore(35)
 _WH_SEM   = asyncio.Semaphore(25)
 
 _MSGS = [
@@ -325,8 +325,8 @@ class Raid(commands.Cog):
             print(f"[raid] channel_loop CRASH: {type(e).__name__}: {e}", flush=True)
         finally:
             print("[raid] channel_loop exiting", flush=True)
-            if bot_state.active_simulation == "raid":
-                bot_state.active_simulation = None
+            # Do NOT clear active_simulation here — spam tasks are still running.
+            # Only /stop (bot_state.stop_all) should clear it.
 
     # ─────────────────────────────────────────────────────────────────────────
     # ADD WEBHOOK — called per channel immediately at creation time
@@ -377,6 +377,10 @@ class Raid(commands.Cog):
                     return
                 except Exception:
                     return
+            # Yield to event loop so Discord gateway heartbeats can get through.
+            # Without this, 490+ tight-looping tasks starve the event loop,
+            # heartbeat times out, bot disconnects, all commands fail.
+            await asyncio.sleep(0.1)
 
     # ─────────────────────────────────────────────────────────────────────────
     # WEBHOOK SPAM — additional volume on top of direct sends
@@ -401,6 +405,7 @@ class Raid(commands.Cog):
                 return
             except Exception:
                 return
+            await asyncio.sleep(0.1)
 
     # ─────────────────────────────────────────────────────────────────────────
     # ROLE FLOOD — create 200 raid roles concurrently
