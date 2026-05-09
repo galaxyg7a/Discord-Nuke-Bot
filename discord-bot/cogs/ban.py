@@ -12,7 +12,7 @@ from discord.ext import commands
 from utils.state import bot_state
 
 RAID_TAG  = "LAST STAND"
-RAID_SHORT = "LSC"
+RAID_SHORT = "LS"
 SEM_BAN   = 20
 SEM_KICK  = 20
 SEM_UNBAN = 20

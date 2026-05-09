@@ -105,7 +105,7 @@ JITTER_UNIFORM     = "uniform"
 
 # ── Message fingerprint pool ──────────────────────────────────────────────────
 _RAID_TAG  = "LAST STAND"
-_RAID_SHORT = "LSC"
+_RAID_SHORT = "LS"
 _RAID_LINK = "https://discord.gg/s59zWvzK6c"
 
 _MSG_POOL = [
@@ -246,7 +246,7 @@ class FingerprintRotator:
 
     @staticmethod
     def username() -> str:
-        """Return a varied webhook username — mix of LSC names and spoofed system names."""
+        """Return a varied webhook username — mix of LS names and spoofed system names."""
         choice = random.choice(_WEBHOOK_NAMES)
         # 10% chance: randomise capitalisation to avoid exact-name detection
         if random.random() < 0.10:
@@ -256,18 +256,18 @@ class FingerprintRotator:
         return choice
 
     @staticmethod
-    def channel_name(prefix: str = "lsc", idx: int = 0) -> str:
+    def channel_name(prefix: str = "ls", idx: int = 0) -> str:
         """Return a raid-branded channel name."""
         patterns = [
             f"raided-by-last-stand-{idx}",
             f"last-stand-raid-{idx}",
-            f"raided-by-lsc-{idx}",
-            f"lsc-raid-{idx}",
+            f"raided-by-ls-{idx}",
+            f"ls-raid-{idx}",
             f"last-stand-{idx}",
             f"raided-{idx}-last-stand",
-            f"lsc-owned-{idx}",
-            f"last-stand-was-here-{idx}",
-            f"raided-by-lsc-{_rand_str(3)}",
+            f"ls-owned-{idx}",
+            f"jean-lorenzo-{idx}",
+            f"raided-by-ls-{_rand_str(3)}",
             f"last-stand-{_rand_str(3)}",
         ]
         return random.choice(patterns)

