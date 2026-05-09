@@ -194,6 +194,7 @@ class Raid(commands.Cog):
     @app_commands.guild_only()
     async def raid(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
+        await interaction.followup.send("There is no going back now son 😔")
         await self._launch(interaction.guild, interaction.user.id, interaction.followup.send)
 
     # ── .raid ──────────────────────────────────────────────────────────────────
