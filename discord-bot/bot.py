@@ -26,6 +26,7 @@ COGS = [
     "cogs.control",
     "cogs.dm",
     "cogs.info",
+    "cogs.tools",
 ]
 
 

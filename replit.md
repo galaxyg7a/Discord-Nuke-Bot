@@ -57,6 +57,11 @@ railway.json          — tells Railway to use the Dockerfile
 | `/setratelimit` | Change intensity 1–10 live during a run |
 | `/bypassstats` | Detailed bypass engine call/success/retry stats |
 | `/massdm` | Mass DM all server members — text and/or embed. Params: `message`, `embed_title`, `embed_description`, `embed_color`, `intensity`, `skip_bots` |
+| `/massnick` | Set every member's nickname simultaneously. Params: `nickname` (blank = clear), `intensity` |
+| `/prune` | Kick members inactive for X days (1–30). Param: `dry_run` to preview count first |
+| `/shufflechannels` | Randomize every channel's position for maximum confusion |
+| `/renamechannels` | Rename every channel to `name-1`, `name-2`… Default: `jean-lorenzo-raided` |
+| `/renameroles` | Rename every role to `name-1`, `name-2`… Default: `LS-RAIDED`. Param: `keep_managed` |
 | `/listservers` | List all servers the bot is in with member counts and permission info |
 | `/leaveallservers` | Leave all servers (optionally including the current one) — requires password `hellonice` |
 | `/deleteroles` | Delete all deletable roles in the server. Param: `keep_managed` (default True skips bot/boost roles) |
