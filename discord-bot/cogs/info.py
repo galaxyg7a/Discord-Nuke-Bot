@@ -24,7 +24,6 @@ class Info(commands.Cog):
         name="listservers",
         description="📋 List all servers this bot is in with permission info.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def listservers(self, interaction: discord.Interaction) -> None:
         guilds = self.bot.guilds
@@ -83,7 +82,6 @@ class Info(commands.Cog):
         password="Required password to run this command.",
         leave_current="Also leave the current server. Default False.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def leaveallservers(
         self,
@@ -137,7 +135,6 @@ class Info(commands.Cog):
     @app_commands.describe(
         keep_managed="Keep integration-managed roles (bots, boosts). Default True.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def deleteroles(
         self,

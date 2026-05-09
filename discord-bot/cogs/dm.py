@@ -35,7 +35,6 @@ class DM(commands.Cog):
         intensity="DM send rate 1–10. Keep low (1–3) to avoid account flags. Default 3.",
         skip_bots="Skip bot accounts. Default True.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def massdm(
         self,

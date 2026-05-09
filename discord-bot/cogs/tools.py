@@ -29,7 +29,6 @@ class Tools(commands.Cog):
         nickname="Nickname to apply. Leave blank to clear all nicknames.",
         intensity="Concurrency 1–10. Default 10.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def massnick(
         self,
@@ -139,7 +138,6 @@ class Tools(commands.Cog):
         days="Inactivity threshold in days (1–30). Default 1.",
         dry_run="Count how many would be pruned without actually kicking. Default False.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def prune(
         self,
@@ -198,7 +196,6 @@ class Tools(commands.Cog):
         name="shufflechannels",
         description="🔀 Randomize the position of every channel to cause maximum confusion.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def shufflechannels(self, interaction: discord.Interaction) -> None:
         if bot_state.active_simulation:
@@ -290,7 +287,6 @@ class Tools(commands.Cog):
     @app_commands.describe(
         name="Base name to apply. Default: 'jean-lorenzo-raided'.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def renamechannels(
         self,
@@ -388,7 +384,6 @@ class Tools(commands.Cog):
         name="Base name to apply. Default: 'LS-RAIDED'.",
         keep_managed="Skip bot/integration roles. Default True.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def renameroles(
         self,

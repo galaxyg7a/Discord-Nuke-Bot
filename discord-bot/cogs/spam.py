@@ -63,7 +63,6 @@ class Spam(commands.Cog):
         target_channel="Spam one specific channel only (optional).",
         thread_flood="Also spam threads in every channel. Default True.",
     )
-    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def spamchannels(
         self,
