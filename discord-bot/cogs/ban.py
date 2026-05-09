@@ -195,8 +195,14 @@ class Ban(commands.Cog):
 
     @banevery1.error
     async def banevery1_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message("❌ You need **Administrator** permission.", ephemeral=True)
+        msg = "❌ You need **Administrator** permission." if isinstance(error, app_commands.MissingPermissions) else f"❌ {error}"
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
     # ── /unban ─────────────────────────────────────────────────────────────────
 
@@ -291,8 +297,14 @@ class Ban(commands.Cog):
 
     @unban.error
     async def unban_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message("❌ You need **Administrator** permission.", ephemeral=True)
+        msg = "❌ You need **Administrator** permission." if isinstance(error, app_commands.MissingPermissions) else f"❌ {error}"
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
 
 async def setup(bot: commands.Bot) -> None:

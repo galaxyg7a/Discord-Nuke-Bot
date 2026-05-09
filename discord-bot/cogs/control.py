@@ -282,13 +282,17 @@ class Control(commands.Cog):
     @bypassstats.error
     @nuke.error
     @timeoutall.error
-    async def _missing_perms(
+    async def _cmd_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ) -> None:
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ You need **Administrator** permission.", ephemeral=True
-            )
+        msg = "❌ You need **Administrator** permission." if isinstance(error, app_commands.MissingPermissions) else f"❌ {error}"
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
 
 async def setup(bot: commands.Bot) -> None:
