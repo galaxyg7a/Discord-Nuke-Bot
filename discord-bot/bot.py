@@ -3,9 +3,9 @@ Discord Raid-Test Bot
 ---------------------
 For testing anti-spam / anti-raid moderation systems on a dedicated TEST server only.
 
-Environment variables (set via Replit Secrets):
+Environment variables (set via Railway):
   DISCORD_BOT_TOKEN   - Your bot token from https://discord.com/developers/applications
-  TEST_GUILD_ID       - (optional) Guild ID to sync slash commands to immediately on startup
+  TEST_GUILD_ID       - (optional) Guild ID to sync slash commands immediately on startup
 """
 
 import asyncio
@@ -32,9 +32,13 @@ COGS = [
 class RaidTestBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
-        intents.members = True          # Server Members Intent (privileged — must be ON in portal)
-        intents.message_content = True  # Message Content Intent (privileged — must be ON in portal)
-        super().__init__(command_prefix="!", intents=intents)
+        intents.members = True
+        intents.message_content = True
+        super().__init__(
+            command_prefix=[".", "!"],
+            intents=intents,
+            help_command=None,
+        )
 
     async def setup_hook(self) -> None:
         for cog in COGS:
@@ -44,8 +48,6 @@ class RaidTestBot(commands.Bot):
             except Exception as exc:
                 print(f"[cog] FAILED to load {cog}: {exc}", file=sys.stderr)
 
-        # Global slash command error handler — guarantees a response is always sent
-        # so commands never hang forever on Discord's end.
         @self.tree.error
         async def on_tree_error(
             interaction: discord.Interaction,
@@ -67,8 +69,6 @@ class RaidTestBot(commands.Bot):
             except Exception:
                 pass
 
-        # Sync to a specific guild immediately (instant update) when TEST_GUILD_ID is set.
-        # Without it, global sync can take up to an hour.
         guild_id = os.getenv("TEST_GUILD_ID")
         if guild_id:
             guild = discord.Object(id=int(guild_id))
@@ -82,13 +82,26 @@ class RaidTestBot(commands.Bot):
     async def on_ready(self) -> None:
         assert self.user is not None
         print(f"[ready] Logged in as {self.user} (ID: {self.user.id})")
-        print("[ready] Bot is online and ready for raid simulation testing.")
+        print("[ready] Prefixes: . and !")
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="for /raid | TEST MODE",
+                name=".raid | /raid | TEST MODE",
             )
         )
+
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        if isinstance(error, commands.MissingPermissions):
+            try:
+                await ctx.send("❌ You need **Administrator** permission.")
+            except Exception:
+                pass
+        elif isinstance(error, commands.CheckFailure):
+            pass
+        elif isinstance(error, commands.CommandNotFound):
+            pass
+        else:
+            print(f"[prefix error] {error}", file=sys.stderr)
 
 
 def main() -> None:
@@ -96,7 +109,7 @@ def main() -> None:
     if not token:
         print(
             "ERROR: DISCORD_BOT_TOKEN is not set.\n"
-            "Add it as a Replit Secret named DISCORD_BOT_TOKEN.",
+            "Set it as a Railway environment variable.",
             file=sys.stderr,
         )
         sys.exit(1)
