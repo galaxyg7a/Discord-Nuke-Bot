@@ -201,7 +201,7 @@ class Raid(commands.Cog):
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def raid_prefix(self, ctx: commands.Context) -> None:
-        await self._launch(ctx.guild, ctx.author.id, ctx.send)
+        await ctx.send("There is no going back now son 😔")
 
     # ─────────────────────────────────────────────────────────────────────────
     # RENAME + LOCK
