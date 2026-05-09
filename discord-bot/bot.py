@@ -23,6 +23,8 @@ COGS = [
     "cogs.ban",
     "cogs.spam",
     "cogs.control",
+    "cogs.dm",
+    "cogs.info",
 ]
 
 
