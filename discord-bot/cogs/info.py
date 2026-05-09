@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.bypass import ROUTE_CHANNEL_DELETE, ROUTE_ROLE_DELETE
+from utils.bypass import ROUTE_ROLE_DELETE
 from utils.state import bot_state
 
 RAID_TAG       = "LAST STAND"
