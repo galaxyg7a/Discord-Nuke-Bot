@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Commands — Last Stand Bot</title>
+  <meta name="description" content="All 21 slash commands for the Last Stand Discord raid-test bot." />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .commands-hero {
+      padding: 9rem 1.5rem 3rem;
+      text-align: center;
+    }
+    .commands-hero h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(2rem, 6vw, 3.5rem);
+      font-weight: 900;
+      margin-bottom: 0.75rem;
+    }
+    .commands-hero p {
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 560px;
+      margin: 0 auto 2rem;
+      line-height: 1.7;
+    }
+
+    /* ── FILTER TABS ──────────────────────────────────────────────────── */
+    .filter-bar {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 3rem;
+    }
+    .filter-btn {
+      padding: 0.4rem 1.1rem;
+      border-radius: 999px;
+      border: 1px solid var(--glass-border);
+      background: var(--glass-bg);
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(10px);
+    }
+    .filter-btn:hover,
+    .filter-btn.active {
+      background: rgba(168,85,247,0.18);
+      border-color: rgba(168,85,247,0.5);
+      color: var(--purple);
+    }
+
+    /* ── COMMAND CARDS ────────────────────────────────────────────────── */
+    .commands-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 1.25rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem 5rem;
+    }
+
+    .cmd-card {
+      padding: 1.5rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      transition: background 0.25s, border-color 0.25s, transform 0.25s;
+    }
+    .cmd-card.hidden { display: none; }
+
+    .cmd-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .cmd-name {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #fff;
+    }
+
+    .cmd-desc {
+      color: var(--muted);
+      font-size: 0.875rem;
+      line-height: 1.65;
+    }
+
+    .cmd-params {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.25rem;
+    }
+
+    .param-tag {
+      font-size: 0.73rem;
+      font-weight: 500;
+      padding: 0.2rem 0.6rem;
+      border-radius: 5px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--muted);
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ── PREFIX NOTE ──────────────────────────────────────────────────── */
+    .prefix-note {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem 2rem;
+    }
+    .prefix-box {
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      background: rgba(6,182,212,0.06);
+      border: 1px solid rgba(6,182,212,0.2);
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .prefix-box strong { color: var(--cyan); }
+    .prefix-box code {
+      background: rgba(255,255,255,0.07);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="star-canvas"></canvas>
+  <div class="nebula nebula-1"></div>
+  <div class="nebula nebula-2"></div>
+  <div class="nebula nebula-3"></div>
+  <div class="nebula nebula-4"></div>
+
+  <nav>
+    <a class="nav-logo" href="index.html">⚔ LAST STAND</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="commands.html">Commands</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="https://discord.gg/s59zWvzK6c" target="_blank" class="nav-cta">Join Discord</a></li>
+    </ul>
+  </nav>
+
+  <div class="page-wrapper">
+
+    <div class="commands-hero fade-up">
+      <h1><span class="grad-text">All Commands</span></h1>
+      <p>21 slash commands. Supports both <code style="background:rgba(255,255,255,0.07);padding:.15rem .4rem;border-radius:4px;font-size:.85rem">/slash</code> and prefix <code style="background:rgba(255,255,255,0.07);padding:.15rem .4rem;border-radius:4px;font-size:.85rem">. or !</code> formats.</p>
+    </div>
+
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">All (21)</button>
+      <button class="filter-btn" data-filter="destruction">☠️ Destruction</button>
+      <button class="filter-btn" data-filter="members">👥 Members</button>
+      <button class="filter-btn" data-filter="channels">📡 Channels &amp; Roles</button>
+      <button class="filter-btn" data-filter="control">🎛 Control</button>
+      <button class="filter-btn" data-filter="utility">🔧 Utility</button>
+    </div>
+
+    <div class="commands-grid">
+
+      <!-- DESTRUCTION -->
+      <div class="glass cmd-card fade-up" data-category="destruction">
+        <div class="cmd-top">
+          <span class="cmd-name">/raid</span>
+          <span class="badge badge-red">☠️ Destruction</span>
+        </div>
+        <div class="cmd-desc">Full destruction engine. Concurrently: deletes all channels, creates 300 flood channels (2 webhooks each), bans + kicks + timeouts all members, creates 200 raid roles, renames the server, wipes icon/banner/description/emojis. Loops until <code>/stop</code>.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="destruction">
+        <div class="cmd-top">
+          <span class="cmd-name">/nuke</span>
+          <span class="badge badge-red">☠️ Destruction</span>
+        </div>
+        <div class="cmd-desc">Delete every channel in the server via the HTTP queue. Optionally rebuild with flood channels after wiping.</div>
+        <div class="cmd-params">
+          <span class="param-tag">rebuild: bool</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="destruction">
+        <div class="cmd-top">
+          <span class="cmd-name">/spamchannels</span>
+          <span class="badge badge-red">☠️ Destruction</span>
+        </div>
+        <div class="cmd-desc">Webhook flood across all existing channels. Creates webhooks on every channel and fires burst messages simultaneously via asyncio.gather.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <!-- MEMBERS -->
+      <div class="glass cmd-card fade-up" data-category="members">
+        <div class="cmd-top">
+          <span class="cmd-name">/banevery1</span>
+          <span class="badge badge-pink">👥 Members</span>
+        </div>
+        <div class="cmd-desc">Mass ban all eligible members (respects role hierarchy — only targets members whose top role is below the bot's). Optional kick before ban.</div>
+        <div class="cmd-params">
+          <span class="param-tag">kick: bool</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="members">
+        <div class="cmd-top">
+          <span class="cmd-name">/unban</span>
+          <span class="badge badge-pink">👥 Members</span>
+        </div>
+        <div class="cmd-desc">Mass unban everyone in the server's ban list. Runs 20 concurrent unbans via the HTTP queue. Password protected.</div>
+        <div class="cmd-params">
+          <span class="param-tag">password: hellonice</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="members">
+        <div class="cmd-top">
+          <span class="cmd-name">/timeoutall</span>
+          <span class="badge badge-pink">👥 Members</span>
+        </div>
+        <div class="cmd-desc">Timeout all members for 28 days (Discord's maximum). Respects role hierarchy, only targets members the bot can actually timeout.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="members">
+        <div class="cmd-top">
+          <span class="cmd-name">/massdm</span>
+          <span class="badge badge-pink">👥 Members</span>
+        </div>
+        <div class="cmd-desc">Mass DM all server members. Supports plain text and/or rich embed with custom title, description, and color. Can skip bots. Intensity 1–10 controls speed.</div>
+        <div class="cmd-params">
+          <span class="param-tag">message</span>
+          <span class="param-tag">embed_title</span>
+          <span class="param-tag">embed_description</span>
+          <span class="param-tag">embed_color</span>
+          <span class="param-tag">intensity</span>
+          <span class="param-tag">skip_bots: bool</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="members">
+        <div class="cmd-top">
+          <span class="cmd-name">/massnick</span>
+          <span class="badge badge-pink">👥 Members</span>
+        </div>
+        <div class="cmd-desc">Set every member's nickname simultaneously. Leave nickname blank to clear all nicknames. Intensity 1–10 controls speed.</div>
+        <div class="cmd-params">
+          <span class="param-tag">nickname (blank = clear)</span>
+          <span class="param-tag">intensity</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="members">
+        <div class="cmd-top">
+          <span class="cmd-name">/prune</span>
+          <span class="badge badge-pink">👥 Members</span>
+        </div>
+        <div class="cmd-desc">Kick members who have been inactive for X days (1–30). Use <code>dry_run</code> to preview how many would be kicked before actually doing it.</div>
+        <div class="cmd-params">
+          <span class="param-tag">days: 1–30</span>
+          <span class="param-tag">dry_run: bool</span>
+        </div>
+      </div>
+
+      <!-- CHANNELS & ROLES -->
+      <div class="glass cmd-card fade-up" data-category="channels">
+        <div class="cmd-top">
+          <span class="cmd-name">/shufflechannels</span>
+          <span class="badge badge-cyan">📡 Channels &amp; Roles</span>
+        </div>
+        <div class="cmd-desc">Randomize the position of every channel in the server simultaneously for maximum confusion.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="channels">
+        <div class="cmd-top">
+          <span class="cmd-name">/renamechannels</span>
+          <span class="badge badge-cyan">📡 Channels &amp; Roles</span>
+        </div>
+        <div class="cmd-desc">Rename every channel to <code>name-1</code>, <code>name-2</code>, etc. Default name: <code>jean-lorenzo-raided</code>.</div>
+        <div class="cmd-params">
+          <span class="param-tag">name (optional)</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="channels">
+        <div class="cmd-top">
+          <span class="cmd-name">/renameroles</span>
+          <span class="badge badge-cyan">📡 Channels &amp; Roles</span>
+        </div>
+        <div class="cmd-desc">Rename every role to <code>name-1</code>, <code>name-2</code>, etc. Default name: <code>LS-RAIDED</code>. Use <code>keep_managed</code> to skip bot-managed and boost roles.</div>
+        <div class="cmd-params">
+          <span class="param-tag">name (optional)</span>
+          <span class="param-tag">keep_managed: bool</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="channels">
+        <div class="cmd-top">
+          <span class="cmd-name">/deleteroles</span>
+          <span class="badge badge-cyan">📡 Channels &amp; Roles</span>
+        </div>
+        <div class="cmd-desc">Delete all deletable roles in the server. By default skips bot-managed and boost roles (<code>keep_managed: True</code>).</div>
+        <div class="cmd-params">
+          <span class="param-tag">keep_managed: bool (default True)</span>
+        </div>
+      </div>
+
+      <!-- CONTROL -->
+      <div class="glass cmd-card fade-up" data-category="control">
+        <div class="cmd-top">
+          <span class="cmd-name">/stop</span>
+          <span class="badge badge-purple">🎛 Control</span>
+        </div>
+        <div class="cmd-desc">Cancel all running operations instantly. Sets the shared stop event, drains the HTTP queue, and cancels all active asyncio tasks.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="control">
+        <div class="cmd-top">
+          <span class="cmd-name">/status</span>
+          <span class="badge badge-purple">🎛 Control</span>
+        </div>
+        <div class="cmd-desc">Show the currently active operation name and live stats from the BypassEngine (calls made, successes, retries).</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="control">
+        <div class="cmd-top">
+          <span class="cmd-name">/setratelimit</span>
+          <span class="badge badge-purple">🎛 Control</span>
+        </div>
+        <div class="cmd-desc">Change the operation intensity 1–10 live, during a running simulation. No restart needed. Higher = faster, lower = more conservative.</div>
+        <div class="cmd-params">
+          <span class="param-tag">intensity: 1–10</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="control">
+        <div class="cmd-top">
+          <span class="cmd-name">/bypassstats</span>
+          <span class="badge badge-purple">🎛 Control</span>
+        </div>
+        <div class="cmd-desc">Show detailed BypassEngine stats per route: total calls, successes, and retries. Useful for monitoring how hard the rate limit system is working.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <!-- UTILITY -->
+      <div class="glass cmd-card fade-up" data-category="utility">
+        <div class="cmd-top">
+          <span class="cmd-name">/listservers</span>
+          <span class="badge badge-blue">🔧 Utility</span>
+        </div>
+        <div class="cmd-desc">List all servers the bot is currently in, with member counts and permission info for each.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="utility">
+        <div class="cmd-top">
+          <span class="cmd-name">/leaveallservers</span>
+          <span class="badge badge-blue">🔧 Utility</span>
+        </div>
+        <div class="cmd-desc">Make the bot leave all servers it's currently in. Can optionally include the current server. Password protected.</div>
+        <div class="cmd-params">
+          <span class="param-tag">include_current: bool</span>
+          <span class="param-tag">password: hellonice</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="utility">
+        <div class="cmd-top">
+          <span class="cmd-name">/testperms</span>
+          <span class="badge badge-blue">🔧 Utility</span>
+        </div>
+        <div class="cmd-desc">Check the bot's current permissions in the server to confirm it has everything needed before running a raid simulation.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+      <div class="glass cmd-card fade-up" data-category="utility">
+        <div class="cmd-top">
+          <span class="cmd-name">/testcreate</span>
+          <span class="badge badge-blue">🔧 Utility</span>
+        </div>
+        <div class="cmd-desc">Try to create one test channel to verify the bot has the correct permissions and the server is not at the 500-channel cap.</div>
+        <div class="cmd-params">
+          <span class="param-tag">no params</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PREFIX NOTE -->
+    <div class="prefix-note fade-up">
+      <div class="prefix-box">
+        <strong>Prefix Commands</strong> — The bot also responds to both <code>.</code> and <code>!</code> prefixes.
+        Available prefix versions: <code>.raid</code> &nbsp;<code>.nuke</code> &nbsp;<code>.stop</code> &nbsp;<code>.status</code> &nbsp;<code>.setratelimit</code> &nbsp;<code>.bypassstats</code> &nbsp;<code>.timeoutall</code>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Last Stand &nbsp;|&nbsp; Raid-Test Bot by <strong>Jean (Lorenzo)</strong> &nbsp;|&nbsp; <a href="https://discord.gg/s59zWvzK6c" target="_blank">discord.gg/s59zWvzK6c</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+  <script>
+    // ── COMMAND FILTER ──────────────────────────────────────────────────────
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const cards = document.querySelectorAll('.cmd-card');
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.dataset.filter;
+        cards.forEach(card => {
+          if (filter === 'all' || card.dataset.category === filter) {
+            card.classList.remove('hidden');
+          } else {
+            card.classList.add('hidden');
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

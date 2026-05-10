@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About — Last Stand Bot</title>
+  <meta name="description" content="Architecture, tech stack, and design decisions behind the Last Stand Discord raid-test bot." />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .about-hero {
+      padding: 9rem 1.5rem 3rem;
+      text-align: center;
+    }
+    .about-hero h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(2rem, 6vw, 3.5rem);
+      font-weight: 900;
+      margin-bottom: 0.75rem;
+    }
+    .about-hero p {
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 580px;
+      margin: 0 auto;
+      line-height: 1.75;
+    }
+
+    /* ── SECTIONS ─────────────────────────────────────────────────────── */
+    .about-section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 4rem 1.5rem;
+    }
+    .about-section h2 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(1.3rem, 3vw, 1.9rem);
+      font-weight: 700;
+      margin-bottom: 1.75rem;
+    }
+
+    /* ── STACK TABLE ──────────────────────────────────────────────────── */
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.1rem;
+    }
+    .stack-card {
+      padding: 1.4rem 1.4rem;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    .stack-icon {
+      font-size: 1.5rem;
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+    .stack-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 0.3rem;
+      color: #fff;
+    }
+    .stack-detail { color: var(--muted); font-size: 0.83rem; line-height: 1.6; }
+
+    /* ── ARCHITECTURE ─────────────────────────────────────────────────── */
+    .arch-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.1rem;
+    }
+    .arch-item {
+      padding: 1.4rem 1.5rem;
+      display: flex;
+      gap: 1.1rem;
+      align-items: flex-start;
+    }
+    .arch-num {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--purple);
+      flex-shrink: 0;
+      margin-top: 0.05rem;
+    }
+    .arch-title { font-weight: 600; font-size: 0.97rem; margin-bottom: 0.35rem; color: #fff; }
+    .arch-desc  { color: var(--muted); font-size: 0.875rem; line-height: 1.65; }
+
+    /* ── HOW RAID WORKS ───────────────────────────────────────────────── */
+    .phases-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 1.1rem;
+    }
+    .phase-card { padding: 1.4rem 1.5rem; }
+    .phase-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--purple);
+      margin-bottom: 0.4rem;
+    }
+    .phase-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.45rem; color: #fff; }
+    .phase-desc  { color: var(--muted); font-size: 0.855rem; line-height: 1.65; }
+
+    /* ── DEPLOYMENT ───────────────────────────────────────────────────── */
+    .deploy-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+    .deploy-step {
+      padding: 1rem 1.5rem;
+      text-align: center;
+      border-radius: 12px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(14px);
+      min-width: 140px;
+    }
+    .deploy-step-icon { font-size: 1.6rem; margin-bottom: 0.4rem; }
+    .deploy-step-title { font-weight: 600; font-size: 0.88rem; color: #fff; margin-bottom: 0.15rem; }
+    .deploy-step-sub   { color: var(--muted); font-size: 0.77rem; }
+    .deploy-arrow { color: var(--purple); font-size: 1.3rem; margin: 0 0.5rem; }
+
+    @media (max-width: 600px) { .deploy-arrow { display: none; } }
+
+    /* ── IMPORTANT RULES ──────────────────────────────────────────────── */
+    .rules-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .rules-list li {
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+      padding: 1rem 1.25rem;
+      border-radius: 10px;
+      background: rgba(239,68,68,0.05);
+      border: 1px solid rgba(239,68,68,0.15);
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .rules-list li .icon { flex-shrink: 0; font-size: 1rem; margin-top: 0.05rem; }
+    .rules-list code {
+      background: rgba(255,255,255,0.07);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      color: #e2e8f0;
+    }
+
+    /* ── INTENTS NOTE ─────────────────────────────────────────────────── */
+    .intent-box {
+      padding: 1.4rem 1.5rem;
+      border-radius: 12px;
+      background: rgba(251,191,36,0.05);
+      border: 1px solid rgba(251,191,36,0.2);
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .intent-box strong { color: #fbbf24; }
+    .intent-box ul { margin: 0.6rem 0 0 1.2rem; }
+    .intent-box li { margin-bottom: 0.25rem; }
+  </style>
+</head>
+<body>
+  <canvas id="star-canvas"></canvas>
+  <div class="nebula nebula-1"></div>
+  <div class="nebula nebula-2"></div>
+  <div class="nebula nebula-3"></div>
+  <div class="nebula nebula-4"></div>
+
+  <nav>
+    <a class="nav-logo" href="index.html">⚔ LAST STAND</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="commands.html">Commands</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="https://discord.gg/s59zWvzK6c" target="_blank" class="nav-cta">Join Discord</a></li>
+    </ul>
+  </nav>
+
+  <div class="page-wrapper">
+
+    <!-- HERO -->
+    <div class="about-hero fade-up">
+      <h1><span class="grad-text">About the Bot</span></h1>
+      <p>Last Stand is a private Discord bot built exclusively to stress-test a custom anti-raid system on a private test server. Built by <strong>Jean (Lorenzo)</strong>.</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- TECH STACK -->
+    <div class="about-section">
+      <h2 class="fade-up"><span class="grad-text">Tech Stack</span></h2>
+      <div class="stack-grid">
+        <div class="glass stack-card fade-up">
+          <div class="stack-icon">🐍</div>
+          <div>
+            <div class="stack-name">Python 3.12</div>
+            <div class="stack-detail">Core runtime. All bot logic is Python.</div>
+          </div>
+        </div>
+        <div class="glass stack-card fade-up" style="transition-delay:0.05s">
+          <div class="stack-icon">🤖</div>
+          <div>
+            <div class="stack-name">discord.py 2.3+</div>
+            <div class="stack-detail">Cog-based architecture. Slash commands via app_commands, prefix commands via commands.ext.</div>
+          </div>
+        </div>
+        <div class="glass stack-card fade-up" style="transition-delay:0.1s">
+          <div class="stack-icon">⚡</div>
+          <div>
+            <div class="stack-name">asyncio</div>
+            <div class="stack-detail">asyncio.gather + asyncio.Semaphore for all concurrent operations. Semaphore(2) for channel creation, Semaphore(25) for spam.</div>
+          </div>
+        </div>
+        <div class="glass stack-card fade-up" style="transition-delay:0.15s">
+          <div class="stack-icon">🔥</div>
+          <div>
+            <div class="stack-name">requests (raw HTTP)</div>
+            <div class="stack-detail">100 daemon threads each firing raw requests directly to Discord REST API, bypassing discord.py's rate limit buckets entirely.</div>
+          </div>
+        </div>
+        <div class="glass stack-card fade-up" style="transition-delay:0.2s">
+          <div class="stack-icon">🚀</div>
+          <div>
+            <div class="stack-name">Railway + Docker</div>
+            <div class="stack-detail">Deployed via Dockerfile (Python 3.12-slim). Auto-redeploys on every Git push. Replit is editor only — bot never runs locally.</div>
+          </div>
+        </div>
+        <div class="glass stack-card fade-up" style="transition-delay:0.25s">
+          <div class="stack-icon">🛡</div>
+          <div>
+            <div class="stack-name">BypassEngine</div>
+            <div class="stack-detail">Custom per-route 429 isolation, adaptive retry, full-jitter exponential backoff, fingerprint rotation.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ARCHITECTURE -->
+    <div class="about-section">
+      <h2 class="fade-up"><span class="grad-text-2">Core Architecture</span></h2>
+      <div class="arch-list">
+        <div class="glass arch-item fade-up">
+          <div class="arch-num">01</div>
+          <div>
+            <div class="arch-title">BotState Singleton (utils/state.py)</div>
+            <div class="arch-desc">All cogs share one <code>bot_state</code> instance. Holds the <code>stop_event</code> (asyncio.Event — set by /stop, checked in every loop), <code>active_simulation</code> (prevents double-starts), <code>running_tasks</code> (set of active asyncio.Tasks), and references to the BypassEngine and RateController.</div>
+          </div>
+        </div>
+        <div class="glass arch-item fade-up" style="transition-delay:0.08s">
+          <div class="arch-num">02</div>
+          <div>
+            <div class="arch-title">HttpQueue (utils/http_queue.py) — c-realV2 Port</div>
+            <div class="arch-desc">100 daemon threads pull from an unbounded Python Queue. Each thread fires raw <code>requests</code> calls directly to Discord's REST API with the bot token. On 429: sleeps <code>min(retry_after, 5s)</code> then always requeues — requests are never silently dropped. <code>/stop</code> calls <code>queue.clear()</code> to instantly drain pending operations.</div>
+          </div>
+        </div>
+        <div class="glass arch-item fade-up" style="transition-delay:0.16s">
+          <div class="arch-num">03</div>
+          <div>
+            <div class="arch-title">BypassEngine (utils/bypass.py)</div>
+            <div class="arch-desc">Handles all discord.py API calls (channel creates, server edits). Per-route 429 isolation means a ban rate limit doesn't pause webhook sends. Uses adaptive retry with full-jitter exponential backoff. FingerprintRotator varies content to avoid pattern detection.</div>
+          </div>
+        </div>
+        <div class="glass arch-item fade-up" style="transition-delay:0.24s">
+          <div class="arch-num">04</div>
+          <div>
+            <div class="arch-title">RateController (utils/rate_control.py)</div>
+            <div class="arch-desc">Intensity 1–10 mapped to delays and burst sizes. Shared across all cogs. Adjustable live during a running simulation with <code>/setratelimit</code> — no restart needed.</div>
+          </div>
+        </div>
+        <div class="glass arch-item fade-up" style="transition-delay:0.32s">
+          <div class="arch-num">05</div>
+          <div>
+            <div class="arch-title">Cog Architecture</div>
+            <div class="arch-desc">Commands split across four cogs: <code>raid.py</code> (full destruction engine), <code>ban.py</code> (mass ban/kick/unban), <code>spam.py</code> (webhook flood), <code>control.py</code> (stop, status, nuke, timeoutall). All loaded by <code>bot.py</code> on startup.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- HOW /raid WORKS -->
+    <div class="about-section">
+      <h2 class="fade-up">How <span class="grad-text">/raid</span> Works</h2>
+      <p class="fade-up" style="color:var(--muted);font-size:.92rem;margin-bottom:1.75rem;line-height:1.7">All six phases launch concurrently from a single <code>asyncio.create_task</code> call. Nothing is sequential.</p>
+      <div class="phases-grid">
+        <div class="glass phase-card fade-up">
+          <div class="phase-label">Phase 1</div>
+          <div class="phase-title">Rename + Lock Server</div>
+          <div class="phase-desc">Renames the server to <code>RAIDED BY JEAN(LORENZO) FROM LAST STAND</code> and removes all @everyone permissions.</div>
+        </div>
+        <div class="glass phase-card fade-up" style="transition-delay:0.07s">
+          <div class="phase-label">Phase 2</div>
+          <div class="phase-title">Wipe Server Assets</div>
+          <div class="phase-desc">Removes server icon, banner, description, and stickers. Sets description to the raid tag and link.</div>
+        </div>
+        <div class="glass phase-card fade-up" style="transition-delay:0.14s">
+          <div class="phase-label">Phase 3</div>
+          <div class="phase-title">Wipe All Emojis</div>
+          <div class="phase-desc">Queues DELETE requests for every custom emoji in the server via the 100-thread HTTP queue.</div>
+        </div>
+        <div class="glass phase-card fade-up" style="transition-delay:0.21s">
+          <div class="phase-label">Phase 4</div>
+          <div class="phase-title">Channel Nuke + Flood Loop</div>
+          <div class="phase-desc">Queues DELETE for all existing channels (protected <code>ls-control</code> hub is skipped). Waits, then creates 300 flood channels via discord.py (Semaphore(2), 2 channels/sec Discord limit), immediately spawning webhook spam on each. Loops until /stop.</div>
+        </div>
+        <div class="glass phase-card fade-up" style="transition-delay:0.28s">
+          <div class="phase-label">Phase 5</div>
+          <div class="phase-title">Role Flood</div>
+          <div class="phase-desc">POSTs 200 new roles named with the raid tag simultaneously via the HTTP queue.</div>
+        </div>
+        <div class="glass phase-card fade-up" style="transition-delay:0.35s">
+          <div class="phase-label">Phase 6</div>
+          <div class="phase-title">Member Ops</div>
+          <div class="phase-desc">Kicks, bans, timeouts (28 days), and sets nicknames for all members simultaneously via the HTTP queue. Respects role hierarchy — only targets members whose top role is below the bot's.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- DEPLOYMENT -->
+    <div class="about-section">
+      <h2 class="fade-up"><span class="grad-text">Deployment Flow</span></h2>
+      <p class="fade-up" style="color:var(--muted);font-size:.92rem;margin-bottom:1.75rem;line-height:1.7">Replit is the editor only. The bot runs exclusively on Railway. Every Git push triggers an automatic redeploy (~2 minutes).</p>
+      <div class="deploy-flow fade-up">
+        <div class="deploy-step">
+          <div class="deploy-step-icon">✏️</div>
+          <div class="deploy-step-title">Edit on Replit</div>
+          <div class="deploy-step-sub">Code editor only</div>
+        </div>
+        <div class="deploy-arrow">→</div>
+        <div class="deploy-step">
+          <div class="deploy-step-icon">📤</div>
+          <div class="deploy-step-title">Git → Push</div>
+          <div class="deploy-step-sub">Via Replit Git tab</div>
+        </div>
+        <div class="deploy-arrow">→</div>
+        <div class="deploy-step">
+          <div class="deploy-step-icon">🚀</div>
+          <div class="deploy-step-title">Railway Deploys</div>
+          <div class="deploy-step-sub">Auto, ~2 min</div>
+        </div>
+        <div class="deploy-arrow">→</div>
+        <div class="deploy-step">
+          <div class="deploy-step-icon">🤖</div>
+          <div class="deploy-step-title">Bot Online</div>
+          <div class="deploy-step-sub">Discord connected</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- DISCORD REQUIREMENTS -->
+    <div class="about-section">
+      <h2 class="fade-up"><span class="grad-text-2">Discord Requirements</span></h2>
+      <div class="intent-box fade-up">
+        <strong>Both of these Privileged Gateway Intents MUST be enabled</strong> in the Discord Developer Portal (Bot → Privileged Gateway Intents):
+        <ul>
+          <li>Server Members Intent</li>
+          <li>Message Content Intent</li>
+        </ul>
+        Without Server Members Intent, <code>guild.members</code> returns an empty list and all member operations silently affect no one.
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- RULES -->
+    <div class="about-section">
+      <h2 class="fade-up" style="color:#f87171">⚠️ Strict Rules</h2>
+      <ul class="rules-list">
+        <li class="fade-up"><span class="icon">🚫</span> <span>Never run the bot inside Replit — no workflows, no <code>python bot.py</code>, no local execution of any kind.</span></li>
+        <li class="fade-up" style="transition-delay:0.07s"><span class="icon">🚫</span> <span>Never create <code>pnpm-workspace.yaml</code> — this breaks Railway by spawning phantom workspace services.</span></li>
+        <li class="fade-up" style="transition-delay:0.14s"><span class="icon">🚫</span> <span>Do not touch <code>railway.json</code>, <code>.dockerignore</code>, <code>tsconfig.json</code>, or <code>src/index.ts</code>.</span></li>
+        <li class="fade-up" style="transition-delay:0.21s"><span class="icon">⚠️</span> <span>Channel creation is capped at ~2/sec by Discord. <code>BATCH=2, BATCH_PAUSE=2.0</code> — never increase BATCH or decrease BATCH_PAUSE or creates will fail silently.</span></li>
+        <li class="fade-up" style="transition-delay:0.28s"><span class="icon">⚠️</span> <span>Always call <code>await guild.chunk(cache=True)</code> before using <code>guild.members</code>. Without it the member list is empty or incomplete.</span></li>
+      </ul>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Last Stand &nbsp;|&nbsp; Raid-Test Bot by <strong>Jean (Lorenzo)</strong> &nbsp;|&nbsp; <a href="https://discord.gg/s59zWvzK6c" target="_blank">discord.gg/s59zWvzK6c</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

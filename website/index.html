@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Last Stand — Discord Raid-Test Bot</title>
+  <meta name="description" content="Last Stand — A Discord bot for stress-testing custom anti-raid systems. 100-thread raw HTTP queue engine, 21 slash commands, full destruction suite." />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* ── HERO ─────────────────────────────────────────────────────────── */
+    .hero-section {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 6rem 1.5rem 4rem;
+      position: relative;
+    }
+    .hero-inner { max-width: 820px; }
+
+    .hero-eyebrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 1.75rem;
+      flex-wrap: wrap;
+    }
+
+    .hero-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(3rem, 9vw, 6.5rem);
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.6rem;
+    }
+
+    .hero-subtitle {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(0.9rem, 2.5vw, 1.3rem);
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-desc {
+      font-size: 1.05rem;
+      color: var(--muted);
+      line-height: 1.75;
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .hero-btns {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* ── SCROLL INDICATOR ─────────────────────────────────────────────── */
+    .scroll-indicator {
+      position: absolute;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      animation: bounce 2s ease-in-out infinite;
+    }
+    .scroll-indicator svg { opacity: 0.5; }
+    @keyframes bounce {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50%       { transform: translateX(-50%) translateY(6px); }
+    }
+
+    /* ── STATS ROW ────────────────────────────────────────────────────── */
+    .stats-section { padding-top: 0; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1.25rem;
+    }
+    .stat-card {
+      padding: 1.75rem 1.5rem;
+      text-align: center;
+    }
+    .stat-num {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2.4rem;
+      font-weight: 900;
+      line-height: 1;
+      margin-bottom: 0.4rem;
+    }
+    .stat-label { color: var(--muted); font-size: 0.85rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+
+    /* ── FEATURES ─────────────────────────────────────────────────────── */
+    .features-header { text-align: center; margin-bottom: 3.5rem; }
+    .features-title { font-family: 'Orbitron', sans-serif; font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 700; margin-bottom: 0.75rem; }
+    .features-desc { color: var(--muted); font-size: 1rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .feature-card { padding: 2rem 1.75rem; }
+    .feature-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 1.25rem;
+    }
+    .icon-purple { background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.3); }
+    .icon-blue   { background: rgba(59,130,246,0.15);  border: 1px solid rgba(59,130,246,0.3); }
+    .icon-pink   { background: rgba(236,72,153,0.15);  border: 1px solid rgba(236,72,153,0.3); }
+    .icon-cyan   { background: rgba(6,182,212,0.15);   border: 1px solid rgba(6,182,212,0.3); }
+    .icon-red    { background: rgba(239,68,68,0.15);   border: 1px solid rgba(239,68,68,0.3); }
+    .icon-green  { background: rgba(34,197,94,0.15);   border: 1px solid rgba(34,197,94,0.3); }
+
+    .feature-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.6rem; }
+    .feature-desc  { color: var(--muted); font-size: 0.9rem; line-height: 1.65; }
+
+    /* ── CTA ──────────────────────────────────────────────────────────── */
+    .cta-section { text-align: center; }
+    .cta-box {
+      padding: 4rem 2rem;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(168,85,247,0.08), rgba(59,130,246,0.08));
+      border: 1px solid rgba(168,85,247,0.2);
+    }
+    .cta-title { font-family: 'Orbitron', sans-serif; font-size: clamp(1.5rem, 4vw, 2.2rem); font-weight: 700; margin-bottom: 0.75rem; }
+    .cta-desc  { color: var(--muted); margin-bottom: 2rem; font-size: 1rem; line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <canvas id="star-canvas"></canvas>
+  <div class="nebula nebula-1"></div>
+  <div class="nebula nebula-2"></div>
+  <div class="nebula nebula-3"></div>
+  <div class="nebula nebula-4"></div>
+
+  <nav>
+    <a class="nav-logo" href="index.html">⚔ LAST STAND</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="commands.html">Commands</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="https://discord.gg/s59zWvzK6c" target="_blank" class="nav-cta">Join Discord</a></li>
+    </ul>
+  </nav>
+
+  <div class="page-wrapper">
+
+    <!-- HERO -->
+    <div class="hero-section">
+      <div class="hero-inner">
+        <div class="hero-eyebrow">
+          <span class="badge badge-purple">⚡ Raid-Test Bot</span>
+          <span class="badge badge-cyan">100-Thread HTTP Engine</span>
+        </div>
+        <h1 class="hero-title grad-text">LAST STAND</h1>
+        <p class="hero-subtitle">Discord Destruction Engine</p>
+        <p class="hero-desc">
+          A private Discord bot built to stress-test custom anti-raid systems.
+          Powered by a 100-thread raw HTTP queue engine ported from c-realV2,
+          with full bypass, rate-limit isolation, and adaptive 429 recovery.
+        </p>
+        <div class="hero-btns">
+          <a class="btn btn-primary" href="https://discord.gg/s59zWvzK6c" target="_blank">
+            ☠️ Join Discord
+          </a>
+          <a class="btn btn-secondary" href="commands.html">View Commands →</a>
+        </div>
+      </div>
+      <div class="scroll-indicator">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        Scroll
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- STATS -->
+    <section class="stats-section">
+      <div class="stats-grid">
+        <div class="glass stat-card fade-up">
+          <div class="stat-num grad-text">100</div>
+          <div class="stat-label">HTTP Threads</div>
+        </div>
+        <div class="glass stat-card fade-up" style="transition-delay:0.1s">
+          <div class="stat-num grad-text-2">21</div>
+          <div class="stat-label">Slash Commands</div>
+        </div>
+        <div class="glass stat-card fade-up" style="transition-delay:0.2s">
+          <div class="stat-num grad-text">300</div>
+          <div class="stat-label">Channels Per Cycle</div>
+        </div>
+        <div class="glass stat-card fade-up" style="transition-delay:0.3s">
+          <div class="stat-num grad-text-2">200</div>
+          <div class="stat-label">Raid Roles Created</div>
+        </div>
+        <div class="glass stat-card fade-up" style="transition-delay:0.4s">
+          <div class="stat-num grad-text">28d</div>
+          <div class="stat-label">Max Timeout Duration</div>
+        </div>
+        <div class="glass stat-card fade-up" style="transition-delay:0.5s">
+          <div class="stat-num grad-text-2">∞</div>
+          <div class="stat-label">Loop Until /stop</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- FEATURES -->
+    <section>
+      <div class="features-header fade-up">
+        <h2 class="features-title">Built for <span class="grad-text">Maximum Pressure</span></h2>
+        <p class="features-desc">Every component is engineered to push Discord's rate limits as far as possible for anti-raid stress testing.</p>
+      </div>
+      <div class="features-grid">
+        <div class="glass feature-card fade-up">
+          <div class="feature-icon icon-purple">⚡</div>
+          <div class="feature-title">100-Thread HTTP Queue</div>
+          <div class="feature-desc">Ported from c-realV2.py. 100 daemon threads pull from an unbounded queue and fire raw REST calls directly to Discord, completely bypassing discord.py's rate limit buckets.</div>
+        </div>
+        <div class="glass feature-card fade-up" style="transition-delay:0.1s">
+          <div class="feature-icon icon-blue">🛡</div>
+          <div class="feature-title">BypassEngine</div>
+          <div class="feature-desc">Per-route 429 isolation so ban throttles don't pause webhook sends. Adaptive retry with full-jitter exponential backoff and fingerprint rotation for content variation.</div>
+        </div>
+        <div class="glass feature-card fade-up" style="transition-delay:0.2s">
+          <div class="feature-icon icon-red">☠️</div>
+          <div class="feature-title">Full Destruction Suite</div>
+          <div class="feature-desc">One /raid command concurrently nukes channels, wipes emojis, floods 300 new channels, creates 200 roles, bans/kicks/timeouts all members, renames the server, and spams every channel.</div>
+        </div>
+        <div class="glass feature-card fade-up" style="transition-delay:0.3s">
+          <div class="feature-icon icon-cyan">🔁</div>
+          <div class="feature-title">Infinite Loop Engine</div>
+          <div class="feature-desc">Runs continuously — delete all channels, rebuild, spam, repeat — until /stop is called. No manual intervention needed after launch.</div>
+        </div>
+        <div class="glass feature-card fade-up" style="transition-delay:0.4s">
+          <div class="feature-icon icon-pink">📡</div>
+          <div class="feature-title">Webhook Flood</div>
+          <div class="feature-desc">2 webhooks per channel, each blasting 3 messages per burst simultaneously via asyncio.gather. All webhook calls bypass auth headers and go straight through the HTTP queue.</div>
+        </div>
+        <div class="glass feature-card fade-up" style="transition-delay:0.5s">
+          <div class="feature-icon icon-green">🎛</div>
+          <div class="feature-title">Live Rate Control</div>
+          <div class="feature-desc">Intensity 1–10 mapped to delays and burst sizes. Adjustable live mid-simulation with /setratelimit — no restart required.</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- CTA -->
+    <section class="cta-section">
+      <div class="cta-box fade-up">
+        <h2 class="cta-title">Ready to <span class="grad-text">Stress Test?</span></h2>
+        <p class="cta-desc">Join the Last Stand Discord server. This bot runs exclusively on Railway — editor-only on Replit, deployed automatically on every push.</p>
+        <div class="hero-btns">
+          <a class="btn btn-primary" href="https://discord.gg/s59zWvzK6c" target="_blank">☠️ Join — discord.gg/s59zWvzK6c</a>
+          <a class="btn btn-secondary" href="commands.html">View All Commands →</a>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <footer>
+    <p>Last Stand &nbsp;|&nbsp; Raid-Test Bot by <strong>Jean (Lorenzo)</strong> &nbsp;|&nbsp; <a href="https://discord.gg/s59zWvzK6c" target="_blank">discord.gg/s59zWvzK6c</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
