@@ -17,6 +17,9 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from utils.http_queue import HttpQueue
+from utils.state import bot_state
+
 load_dotenv()
 
 COGS = [
@@ -61,6 +64,14 @@ class RaidTestBot(commands.Bot):
             else:
                 msg = f"❌ Command error: `{error}`"
                 print(f"[error] unhandled app command error: {error}", file=sys.stderr)
+
+            if bot_state.active_simulation:
+                print(
+                    f"[error] command crashed during '{bot_state.active_simulation}' — resetting state",
+                    file=sys.stderr,
+                )
+                HttpQueue.get().clear()
+                bot_state.stop_all()
 
             try:
                 if interaction.response.is_done():

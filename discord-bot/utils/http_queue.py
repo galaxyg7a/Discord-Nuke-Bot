@@ -7,7 +7,9 @@ Architecture:
   Each thread fires the request directly to Discord's REST API via `requests`,
   completely bypassing discord.py's internal rate-limit bucket system.
 
-  429 handling: if retry_after <= 5s, sleep and requeue. Otherwise drop.
+  429 handling: sleep retry_after capped at MAX_RETRY_SLEEP seconds, then requeue.
+  Requests are NEVER silently dropped — if retry_after > cap, we still sleep the cap
+  and requeue so critical operations (bans, deletes) always eventually complete.
   Stop: call clear() to drain pending items instantly.
 
   All q.put() calls are non-blocking (unbounded queue).
@@ -23,8 +25,9 @@ from threading import Thread
 
 import requests
 
-API_BASE   = "https://discord.com/api/v10"
-CONCURRENT = 100
+API_BASE        = "https://discord.com/api/v10"
+CONCURRENT      = 100
+MAX_RETRY_SLEEP = 30.0
 
 
 class HttpQueue:
@@ -55,13 +58,13 @@ class HttpQueue:
                     try:
                         data = r.json()
                         retry_after = float(data.get("retry_after", 1))
-                        if 0 < retry_after <= 5:
-                            time.sleep(retry_after)
-                            self._q.put((method, url, payload, use_auth))
-                            self._q.task_done()
-                            continue
                     except Exception:
-                        pass
+                        retry_after = 1.0
+                    sleep_for = min(retry_after, MAX_RETRY_SLEEP)
+                    time.sleep(sleep_for)
+                    self._q.put((method, url, payload, use_auth))
+                    self._q.task_done()
+                    continue
             except Exception:
                 pass
             self._q.task_done()
