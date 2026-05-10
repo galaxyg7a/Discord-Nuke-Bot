@@ -157,6 +157,18 @@ nav {
 }
 .btn-secondary:hover { border-color: var(--purple); }
 
+.btn-add-bot {
+  background: linear-gradient(135deg, #06b6d4, #3b82f6);
+  color: #fff;
+  box-shadow: 0 0 24px rgba(6,182,212,0.35);
+}
+.btn-add-bot:hover { opacity: 0.88; }
+
+.nav-cta-bot {
+  background: linear-gradient(135deg, #06b6d4, #3b82f6) !important;
+  margin-left: 0.25rem;
+}
+
 /* ── SECTION ──────────────────────────────────────────────────────────── */
 section { padding: 6rem 2rem; max-width: 1200px; margin: 0 auto; }
 
