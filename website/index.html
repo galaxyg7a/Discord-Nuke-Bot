@@ -3,11 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Last Stand — Discord Raid-Test Bot</title>
-  <meta name="description" content="Last Stand — A Discord bot for stress-testing custom anti-raid systems. 100-thread raw HTTP queue engine, 21 slash commands, full destruction suite." />
+  <title>Last Stand — Discord Nuke Bot</title>
+  <meta name="description" content="Last Stand — A powerful Discord nuke bot built to destroy servers. 21 commands, full destruction suite, mass ban, channel flood, role wipe, and more." />
   <link rel="stylesheet" href="style.css" />
   <style>
-    /* ── HERO ─────────────────────────────────────────────────────────── */
     .hero-section {
       min-height: 100vh;
       display: flex;
@@ -62,7 +61,6 @@
       flex-wrap: wrap;
     }
 
-    /* ── SCROLL INDICATOR ─────────────────────────────────────────────── */
     .scroll-indicator {
       position: absolute;
       bottom: 2rem;
@@ -84,7 +82,6 @@
       50%       { transform: translateX(-50%) translateY(6px); }
     }
 
-    /* ── STATS ROW ────────────────────────────────────────────────────── */
     .stats-section { padding-top: 0; }
     .stats-grid {
       display: grid;
@@ -104,7 +101,6 @@
     }
     .stat-label { color: var(--muted); font-size: 0.85rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
 
-    /* ── FEATURES ─────────────────────────────────────────────────────── */
     .features-header { text-align: center; margin-bottom: 3.5rem; }
     .features-title { font-family: 'Orbitron', sans-serif; font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 700; margin-bottom: 0.75rem; }
     .features-desc { color: var(--muted); font-size: 1rem; max-width: 520px; margin: 0 auto; line-height: 1.7; }
@@ -132,7 +128,6 @@
     .feature-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.6rem; }
     .feature-desc  { color: var(--muted); font-size: 0.9rem; line-height: 1.65; }
 
-    /* ── CTA ──────────────────────────────────────────────────────────── */
     .cta-section { text-align: center; }
     .cta-box {
       padding: 4rem 2rem;
@@ -152,33 +147,30 @@
   <div class="nebula nebula-4"></div>
 
   <nav>
-    <a class="nav-logo" href="index.html">⚔ LAST STAND</a>
+    <a class="nav-logo" href="index.html">☠ LAST STAND</a>
     <ul class="nav-links">
       <li><a href="index.html">Home</a></li>
       <li><a href="commands.html">Commands</a></li>
       <li><a href="about.html">About</a></li>
-      <li><a href="https://discord.gg/s59zWvzK6c" target="_blank" class="nav-cta">Join Discord</a></li>
+      <li><a href="#" class="nav-cta">Join Discord</a></li>
     </ul>
   </nav>
 
   <div class="page-wrapper">
 
-    <!-- HERO -->
     <div class="hero-section">
       <div class="hero-inner">
         <div class="hero-eyebrow">
-          <span class="badge badge-purple">⚡ Raid-Test Bot</span>
-          <span class="badge badge-cyan">100-Thread HTTP Engine</span>
+          <span class="badge badge-purple">☠️ Nuke Bot</span>
+          <span class="badge badge-red">Full Destruction Suite</span>
         </div>
         <h1 class="hero-title grad-text">LAST STAND</h1>
         <p class="hero-subtitle">Discord Destruction Engine</p>
         <p class="hero-desc">
-          A private Discord bot built to stress-test custom anti-raid systems.
-          Powered by a 100-thread raw HTTP queue engine ported from c-realV2,
-          with full bypass, rate-limit isolation, and adaptive 429 recovery.
+          A destructive Discord bot built to obliterate servers. Mass ban, channel wipe, role flood, webhook spam, member timeout — all at once, all unstoppable.
         </p>
         <div class="hero-btns">
-          <a class="btn btn-primary" href="https://discord.gg/s59zWvzK6c" target="_blank">
+          <a class="btn btn-primary" href="#">
             ☠️ Join Discord
           </a>
           <a class="btn btn-secondary" href="commands.html">View Commands →</a>
@@ -192,87 +184,84 @@
 
     <div class="divider"></div>
 
-    <!-- STATS -->
     <section class="stats-section">
       <div class="stats-grid">
         <div class="glass stat-card fade-up">
-          <div class="stat-num grad-text">100</div>
-          <div class="stat-label">HTTP Threads</div>
-        </div>
-        <div class="glass stat-card fade-up" style="transition-delay:0.1s">
-          <div class="stat-num grad-text-2">21</div>
+          <div class="stat-num grad-text">21</div>
           <div class="stat-label">Slash Commands</div>
         </div>
-        <div class="glass stat-card fade-up" style="transition-delay:0.2s">
-          <div class="stat-num grad-text">300</div>
+        <div class="glass stat-card fade-up" style="transition-delay:0.1s">
+          <div class="stat-num grad-text-2">300</div>
           <div class="stat-label">Channels Per Cycle</div>
         </div>
+        <div class="glass stat-card fade-up" style="transition-delay:0.2s">
+          <div class="stat-num grad-text">200</div>
+          <div class="stat-label">Roles Flooded</div>
+        </div>
         <div class="glass stat-card fade-up" style="transition-delay:0.3s">
-          <div class="stat-num grad-text-2">200</div>
-          <div class="stat-label">Raid Roles Created</div>
+          <div class="stat-num grad-text-2">28d</div>
+          <div class="stat-label">Max Timeout</div>
         </div>
         <div class="glass stat-card fade-up" style="transition-delay:0.4s">
-          <div class="stat-num grad-text">28d</div>
-          <div class="stat-label">Max Timeout Duration</div>
+          <div class="stat-num grad-text">∞</div>
+          <div class="stat-label">Loop Until /stop</div>
         </div>
         <div class="glass stat-card fade-up" style="transition-delay:0.5s">
-          <div class="stat-num grad-text-2">∞</div>
-          <div class="stat-label">Loop Until /stop</div>
+          <div class="stat-num grad-text-2">0</div>
+          <div class="stat-label">Mercy</div>
         </div>
       </div>
     </section>
 
     <div class="divider"></div>
 
-    <!-- FEATURES -->
     <section>
       <div class="features-header fade-up">
-        <h2 class="features-title">Built for <span class="grad-text">Maximum Pressure</span></h2>
-        <p class="features-desc">Every component is engineered to push Discord's rate limits as far as possible for anti-raid stress testing.</p>
+        <h2 class="features-title">Built for <span class="grad-text">Total Destruction</span></h2>
+        <p class="features-desc">Every component is engineered to bring a server to its knees as fast as possible.</p>
       </div>
       <div class="features-grid">
         <div class="glass feature-card fade-up">
-          <div class="feature-icon icon-purple">⚡</div>
-          <div class="feature-title">100-Thread HTTP Queue</div>
-          <div class="feature-desc">Ported from c-realV2.py. 100 daemon threads pull from an unbounded queue and fire raw REST calls directly to Discord, completely bypassing discord.py's rate limit buckets.</div>
-        </div>
-        <div class="glass feature-card fade-up" style="transition-delay:0.1s">
-          <div class="feature-icon icon-blue">🛡</div>
-          <div class="feature-title">BypassEngine</div>
-          <div class="feature-desc">Per-route 429 isolation so ban throttles don't pause webhook sends. Adaptive retry with full-jitter exponential backoff and fingerprint rotation for content variation.</div>
-        </div>
-        <div class="glass feature-card fade-up" style="transition-delay:0.2s">
           <div class="feature-icon icon-red">☠️</div>
           <div class="feature-title">Full Destruction Suite</div>
-          <div class="feature-desc">One /raid command concurrently nukes channels, wipes emojis, floods 300 new channels, creates 200 roles, bans/kicks/timeouts all members, renames the server, and spams every channel.</div>
+          <div class="feature-desc">One /raid command simultaneously nukes all channels, floods 300 new channels, creates 200 roles, bans and kicks all members, timeouts everyone, and renames the server.</div>
         </div>
-        <div class="glass feature-card fade-up" style="transition-delay:0.3s">
+        <div class="glass feature-card fade-up" style="transition-delay:0.1s">
+          <div class="feature-icon icon-purple">⚡</div>
+          <div class="feature-title">Mass Member Wipe</div>
+          <div class="feature-desc">Ban, kick, and timeout every member in the server simultaneously. Nicknames overwritten, roles stripped, no one is safe.</div>
+        </div>
+        <div class="glass feature-card fade-up" style="transition-delay:0.2s">
           <div class="feature-icon icon-cyan">🔁</div>
           <div class="feature-title">Infinite Loop Engine</div>
-          <div class="feature-desc">Runs continuously — delete all channels, rebuild, spam, repeat — until /stop is called. No manual intervention needed after launch.</div>
+          <div class="feature-desc">Runs continuously — delete all channels, rebuild flood channels, spam, repeat — until /stop is called. No manual intervention needed.</div>
         </div>
-        <div class="glass feature-card fade-up" style="transition-delay:0.4s">
+        <div class="glass feature-card fade-up" style="transition-delay:0.3s">
           <div class="feature-icon icon-pink">📡</div>
           <div class="feature-title">Webhook Flood</div>
-          <div class="feature-desc">2 webhooks per channel, each blasting 3 messages per burst simultaneously via asyncio.gather. All webhook calls bypass auth headers and go straight through the HTTP queue.</div>
+          <div class="feature-desc">Creates webhooks across every channel and fires simultaneous message bursts. Channels become unusable within seconds.</div>
+        </div>
+        <div class="glass feature-card fade-up" style="transition-delay:0.4s">
+          <div class="feature-icon icon-blue">🛡</div>
+          <div class="feature-title">Unstoppable Engine</div>
+          <div class="feature-desc">Built to push through Discord's limits. Per-route isolation means one operation hitting a wall doesn't slow down the rest.</div>
         </div>
         <div class="glass feature-card fade-up" style="transition-delay:0.5s">
           <div class="feature-icon icon-green">🎛</div>
-          <div class="feature-title">Live Rate Control</div>
-          <div class="feature-desc">Intensity 1–10 mapped to delays and burst sizes. Adjustable live mid-simulation with /setratelimit — no restart required.</div>
+          <div class="feature-title">Live Speed Control</div>
+          <div class="feature-desc">Intensity 1–10 adjustable live mid-operation with /setratelimit. No restart needed — dial up or down on the fly.</div>
         </div>
       </div>
     </section>
 
     <div class="divider"></div>
 
-    <!-- CTA -->
     <section class="cta-section">
       <div class="cta-box fade-up">
-        <h2 class="cta-title">Ready to <span class="grad-text">Stress Test?</span></h2>
-        <p class="cta-desc">Join the Last Stand Discord server. This bot runs exclusively on Railway — editor-only on Replit, deployed automatically on every push.</p>
+        <h2 class="cta-title">Ready to <span class="grad-text">Nuke?</span></h2>
+        <p class="cta-desc">Join the Last Stand Discord server. Private access only — invite required.</p>
         <div class="hero-btns">
-          <a class="btn btn-primary" href="https://discord.gg/s59zWvzK6c" target="_blank">☠️ Join — discord.gg/s59zWvzK6c</a>
+          <a class="btn btn-primary" href="#">☠️ Join Discord</a>
           <a class="btn btn-secondary" href="commands.html">View All Commands →</a>
         </div>
       </div>
@@ -281,7 +270,7 @@
   </div>
 
   <footer>
-    <p>Last Stand &nbsp;|&nbsp; Raid-Test Bot by <strong>Jean (Lorenzo)</strong> &nbsp;|&nbsp; <a href="https://discord.gg/s59zWvzK6c" target="_blank">discord.gg/s59zWvzK6c</a></p>
+    <p>Last Stand &nbsp;|&nbsp; Discord Nuke Bot by <strong>EoN</strong></p>
   </footer>
 
   <script src="app.js"></script>
