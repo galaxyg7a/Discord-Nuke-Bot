@@ -126,6 +126,9 @@
       <li><a href="#" class="nav-cta">Join Discord</a></li>
       <li><a href="https://discord.com/oauth2/authorize?client_id=1501093556037615726&permissions=8&scope=bot%20applications.commands" target="_blank" class="nav-cta nav-cta-bot">➕ Add Bot</a></li>
     </ul>
+    <button class="hamburger" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
   </nav>
 
   <div class="page-wrapper">
@@ -154,7 +157,7 @@
         </div>
         <div class="cmd-desc">Full destruction engine. Simultaneously: deletes all channels, creates 300 flood channels with webhook spam, bans + kicks + timeouts all members, creates 200 roles, renames the server, wipes icon/banner/description/emojis. Loops until <code>/stop</code>.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -165,7 +168,7 @@
         </div>
         <div class="cmd-desc">Delete every channel in the server. Optionally rebuild with flood channels after wiping.</div>
         <div class="cmd-params">
-          <span class="param-tag">rebuild: bool</span>
+          <span class="param-tag">rebuild after wipe: yes / no</span>
         </div>
       </div>
 
@@ -176,7 +179,7 @@
         </div>
         <div class="cmd-desc">Webhook flood across all existing channels. Creates webhooks on every channel and fires burst messages simultaneously.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -188,7 +191,7 @@
         </div>
         <div class="cmd-desc">Mass ban all eligible members. Optional kick before ban.</div>
         <div class="cmd-params">
-          <span class="param-tag">kick: bool</span>
+          <span class="param-tag">also kick: yes / no</span>
         </div>
       </div>
 
@@ -210,7 +213,7 @@
         </div>
         <div class="cmd-desc">Timeout all members for 28 days — Discord's maximum. Everyone is silenced instantly.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -226,7 +229,7 @@
           <span class="param-tag">embed_description</span>
           <span class="param-tag">embed_color</span>
           <span class="param-tag">intensity</span>
-          <span class="param-tag">skip_bots: bool</span>
+          <span class="param-tag">skip bots: yes / no</span>
         </div>
       </div>
 
@@ -250,7 +253,7 @@
         <div class="cmd-desc">Kick members who have been inactive for X days (1–30). Use <code>dry_run</code> to preview the count first.</div>
         <div class="cmd-params">
           <span class="param-tag">days: 1–30</span>
-          <span class="param-tag">dry_run: bool</span>
+          <span class="param-tag">preview only (no action): yes / no</span>
         </div>
       </div>
 
@@ -262,7 +265,7 @@
         </div>
         <div class="cmd-desc">Randomize the position of every channel in the server for maximum confusion.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -285,7 +288,7 @@
         <div class="cmd-desc">Rename every role to a custom name pattern. Default: <code>LS-RAIDED</code>. Option to skip managed roles.</div>
         <div class="cmd-params">
           <span class="param-tag">name (optional)</span>
-          <span class="param-tag">keep_managed: bool</span>
+          <span class="param-tag">skip managed roles: yes / no</span>
         </div>
       </div>
 
@@ -296,7 +299,7 @@
         </div>
         <div class="cmd-desc">Delete all deletable roles in the server. By default skips managed and boost roles.</div>
         <div class="cmd-params">
-          <span class="param-tag">keep_managed: bool (default True)</span>
+          <span class="param-tag">skip managed roles: yes / no (default: yes)</span>
         </div>
       </div>
 
@@ -308,7 +311,7 @@
         </div>
         <div class="cmd-desc">Cancel all running operations instantly. Kills everything mid-execution.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -319,7 +322,7 @@
         </div>
         <div class="cmd-desc">Show what operation is currently running and live performance stats.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -341,7 +344,7 @@
         </div>
         <div class="cmd-desc">Show detailed engine performance stats per operation route.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -353,7 +356,7 @@
         </div>
         <div class="cmd-desc">List all servers the bot is currently in, with member counts and permission info.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -364,7 +367,7 @@
         </div>
         <div class="cmd-desc">Make the bot leave all servers. Can include the current server. Password protected.</div>
         <div class="cmd-params">
-          <span class="param-tag">include_current: bool</span>
+          <span class="param-tag">include this server: yes / no</span>
           <span class="param-tag">password required</span>
         </div>
       </div>
@@ -376,7 +379,7 @@
         </div>
         <div class="cmd-desc">Check the bot's current permissions to confirm everything is in order before running an operation.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
@@ -387,7 +390,7 @@
         </div>
         <div class="cmd-desc">Create one test channel to verify the bot has correct permissions and the server isn't at the channel cap.</div>
         <div class="cmd-params">
-          <span class="param-tag">no params</span>
+          <span class="param-tag">no options needed</span>
         </div>
       </div>
 
