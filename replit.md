@@ -46,7 +46,7 @@ railway.json          — tells Railway to use the Dockerfile
 
 | Command | What it does |
 |---|---|
-| `/raid` | Full destruction: nuke channels, create 100 flood channels, 15 webhooks each, ban/kick/timeout all members, role flood, server rename. `chaos=True` adds emoji flood, event flood, voice chaos, wave repeat, etc. |
+| `/raid` | Full destruction: ban/kick/timeout all members FIRST, delete all channels + emojis, rebuild 300 flood channels × 3 webhooks each, @everyone spam loops non-stop, role flood, server rename to "RAIDED BY JEAN (LORENZO) FROM LS". No numbers in channel names. |
 | `/banevery1` | Mass ban + optional kick of all eligible members |
 | `/unban` | Mass unban everyone — requires password `hellonice` |
 | `/spamchannels` | Webhook flood across all existing channels |
